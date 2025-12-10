@@ -100,4 +100,15 @@ class GroupRepositoryImpl implements GroupRepository {
 
     await batch.commit();
   }
+
+  @override
+  Future<void> joinGroup(String groupId, String userId) async {
+    await _firestore
+        .collection(FirebaseConstants.groupsCollection)
+        .doc(groupId)
+        .update({
+      FirebaseConstants.groupMembersField: FieldValue.arrayUnion([userId]),
+      '${FirebaseConstants.groupBalancesField}.$userId': 0.0,
+    });
+  }
 }

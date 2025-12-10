@@ -13,4 +13,10 @@ abstract class AuthRepository {
 
   /// Get current user
   Future<AppUser?> getCurrentUser();
+
+  /// Get user by email
+  Future<AppUser?> getUserByEmail(String email);
+
+  /// Get multiple users by their IDs (returns List, not Map)
+  Future<List<AppUser>> getUsersByIds(List<String> userIds);
 }

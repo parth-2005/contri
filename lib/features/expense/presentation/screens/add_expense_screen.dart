@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/expense_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../auth/presentation/providers/member_provider.dart';
 import '../../../dashboard/domain/entities/group.dart';
 import '../../../../core/utils/currency_formatter.dart';
 
@@ -133,6 +134,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     final amount = double.tryParse(_amountController.text) ?? 0.0;
+    final membersAsync = ref.watch(memberProfilesProvider(widget.group.members));
 
     return Scaffold(
       appBar: AppBar(
@@ -187,21 +189,52 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
             const SizedBox(height: 16),
 
             // Paid By
-            DropdownButtonFormField<String>(
-              value: _paidBy,
-              decoration: const InputDecoration(
-                labelText: 'Paid By',
-                prefixIcon: Icon(Icons.person),
-              ),
-              items: widget.group.members.map((memberId) {
-                return DropdownMenuItem(
-                  value: memberId,
-                  child: Text('Member $memberId'), // TODO: Show actual names
+            membersAsync.when(
+              data: (members) {
+                return DropdownButtonFormField<String>(
+                  value: _paidBy,
+                  decoration: const InputDecoration(
+                    labelText: 'Paid By',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  items: widget.group.members.map((memberId) {
+                    final memberName = members.containsKey(memberId) 
+                        ? members[memberId]!.name 
+                        : memberId;
+                    return DropdownMenuItem(
+                      value: memberId,
+                      child: Text(memberName),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _paidBy = value);
+                  },
                 );
-              }).toList(),
-              onChanged: (value) {
-                setState(() => _paidBy = value);
               },
+              loading: () => const SizedBox(
+                height: 60,
+                child: Center(child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )),
+              ),
+              error: (_, __) => DropdownButtonFormField<String>(
+                value: _paidBy,
+                decoration: const InputDecoration(
+                  labelText: 'Paid By',
+                  prefixIcon: Icon(Icons.person),
+                ),
+                items: widget.group.members.map((memberId) {
+                  return DropdownMenuItem(
+                    value: memberId,
+                    child: Text(memberId),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => _paidBy = value);
+                },
+              ),
             ),
             const SizedBox(height: 24),
 
@@ -240,76 +273,168 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
             const SizedBox(height: 16),
 
             // Split Details Card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            membersAsync.when(
+              data: (members) {
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Split Details',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        if (amount > 0)
-                          Text(
-                            'Total: ${CurrencyFormatter.format(amount)}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                      ],
-                    ),
-                    const Divider(),
-                    ...widget.group.members.map((memberId) {
-                      final split = _splitType == SplitType.equal
-                          ? amount / widget.group.members.length
-                          : _customSplits[memberId] ?? 0.0;
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            CircleAvatar(
-                              radius: 16,
-                              child: Text(memberId[0].toUpperCase()),
+                            Text(
+                              'Split Details',
+                              style: Theme.of(context).textTheme.titleSmall,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text('Member $memberId'), // TODO: Show actual names
-                            ),
-                            if (_splitType == SplitType.custom)
-                              SizedBox(
-                                width: 100,
-                                child: TextFormField(
-                                  initialValue: split.toStringAsFixed(2),
-                                  decoration: const InputDecoration(
-                                    prefixText: '₹',
-                                    isDense: true,
-                                  ),
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                                  ],
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _customSplits[memberId] = double.tryParse(value) ?? 0.0;
-                                    });
-                                  },
-                                ),
-                              )
-                            else
+                            if (amount > 0)
                               Text(
-                                CurrencyFormatter.format(split),
-                                style: Theme.of(context).textTheme.titleSmall,
+                                'Total: ${CurrencyFormatter.format(amount)}',
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
                           ],
                         ),
-                      );
-                    }).toList(),
-                  ],
+                        const Divider(),
+                        ...widget.group.members.map((memberId) {
+                          final split = _splitType == SplitType.equal
+                              ? amount / widget.group.members.length
+                              : _customSplits[memberId] ?? 0.0;
+                          final memberName = members.containsKey(memberId)
+                              ? members[memberId]!.name
+                              : memberId;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  child: Text(memberName[0].toUpperCase()),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(memberName),
+                                ),
+                                if (_splitType == SplitType.custom)
+                                  SizedBox(
+                                    width: 100,
+                                    child: TextFormField(
+                                      initialValue: split.toStringAsFixed(2),
+                                      decoration: const InputDecoration(
+                                        prefixText: '₹',
+                                        isDense: true,
+                                      ),
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                                      ],
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _customSplits[memberId] = double.tryParse(value) ?? 0.0;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    CurrencyFormatter.format(split),
+                                    style: Theme.of(context).textTheme.titleSmall,
+                                  ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              loading: () => const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
                 ),
               ),
+              error: (_, __) {
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Split Details',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                            if (amount > 0)
+                              Text(
+                                'Total: ${CurrencyFormatter.format(amount)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ],
+                        ),
+                        const Divider(),
+                        ...widget.group.members.map((memberId) {
+                          final split = _splitType == SplitType.equal
+                              ? amount / widget.group.members.length
+                              : _customSplits[memberId] ?? 0.0;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  child: Text(memberId[0].toUpperCase()),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(memberId),
+                                ),
+                                if (_splitType == SplitType.custom)
+                                  SizedBox(
+                                    width: 100,
+                                    child: TextFormField(
+                                      initialValue: split.toStringAsFixed(2),
+                                      decoration: const InputDecoration(
+                                        prefixText: '₹',
+                                        isDense: true,
+                                      ),
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                                      ],
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _customSplits[memberId] = double.tryParse(value) ?? 0.0;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    CurrencyFormatter.format(split),
+                                    style: Theme.of(context).textTheme.titleSmall,
+                                  ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 24),
 

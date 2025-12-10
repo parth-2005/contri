@@ -43,6 +43,66 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
+  void _showJoinGroupDialog(BuildContext context, WidgetRef ref) {
+    final groupIdController = TextEditingController();
+    final authState = ref.read(authStateProvider);
+    final currentUser = authState.value;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Join Group'),
+        content: TextField(
+          controller: groupIdController,
+          decoration: const InputDecoration(
+            hintText: 'Paste group ID here',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final groupId = groupIdController.text.trim();
+              if (groupId.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a group ID')),
+                );
+                return;
+              }
+
+              try {
+                final groupRepository = ref.read(groupRepositoryProvider);
+                if (currentUser != null) {
+                  await groupRepository.joinGroup(groupId, currentUser.id);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Joined group successfully!')),
+                    );
+                    // Refresh groups list
+                    ref.invalidate(userGroupsProvider);
+                  }
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error joining group: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Join'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groupsAsync = ref.watch(userGroupsProvider);
@@ -144,17 +204,33 @@ class DashboardScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CreateGroupScreen(),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton.extended(
+              heroTag: 'join_group',
+              onPressed: () => _showJoinGroupDialog(context, ref),
+              icon: const Icon(Icons.login),
+              label: const Text('Join Group'),
             ),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('New Group'),
+            const SizedBox(height: 12),
+            FloatingActionButton.extended(
+              heroTag: 'create_group',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CreateGroupScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('New Group'),
+            ),
+          ],
+        ),
       ),
     );
   }

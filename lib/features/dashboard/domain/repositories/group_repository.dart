@@ -22,4 +22,7 @@ abstract class GroupRepository {
 
   /// Remove member from group
   Future<void> removeMemberFromGroup(String groupId, String userId);
+
+  /// Join an existing group by ID
+  Future<void> joinGroup(String groupId, String userId);
 }

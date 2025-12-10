@@ -2,32 +2,45 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
+import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/providers/auth_providers.dart';
 import '../../features/dashboard/presentation/screens/dashboard_screen.dart';
+import '../../features/dashboard/presentation/screens/group_details_screen.dart';
+import '../../features/dashboard/domain/entities/group.dart';
 
 /// Router configuration with authentication
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/splash',
     redirect: (context, state) {
-      final isLoggedIn = authState.value != null;
-      final isLoggingIn = state.matchedLocation == '/login';
-
-      // If not logged in and not on login page, redirect to login
-      if (!isLoggedIn && !isLoggingIn) {
-        return '/login';
+      // 1. If loading, go to Splash
+      if (authState.isLoading || authState.hasError) {
+        return '/splash';
       }
 
-      // If logged in and on login page, redirect to dashboard
-      if (isLoggedIn && isLoggingIn) {
+      final isLoggedIn = authState.value != null;
+      final isLoggingIn = state.matchedLocation == '/login';
+      final isSplash = state.matchedLocation == '/splash';
+
+      // 2. If Auth Loaded:
+      if (!isLoggedIn) {
+        return isLoggingIn ? null : '/login';
+      }
+
+      if (isLoggedIn && (isLoggingIn || isSplash)) {
         return '/dashboard';
       }
 
-      return null; // No redirect needed
+      return null;
     },
     routes: [
+      GoRoute(
+        path: '/splash',
+        name: 'splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: '/login',
         name: 'login',
@@ -39,14 +52,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const DashboardScreen(),
       ),
       GoRoute(
-        path: '/group/:groupId',
+        path: '/group-details',
         name: 'groupDetails',
         builder: (context, state) {
-          final groupId = state.pathParameters['groupId']!;
-          return Scaffold(
-            appBar: AppBar(title: const Text('Group Details')),
-            body: Center(child: Text('Group: $groupId')),
-          );
+          // Pass the Group object via 'extra'
+          final group = state.extra as Group;
+          return GroupDetailsScreen(group: group);
         },
       ),
     ],

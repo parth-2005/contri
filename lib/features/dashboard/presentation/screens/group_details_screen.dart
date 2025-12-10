@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../domain/entities/group.dart';
 import '../../../expense/domain/entities/expense.dart';
 import '../../../expense/presentation/providers/expense_providers.dart';
 import '../../../expense/presentation/screens/add_expense_screen.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../auth/presentation/providers/member_provider.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import 'package:intl/intl.dart';
 
@@ -25,14 +27,19 @@ class GroupDetailsScreen extends ConsumerWidget {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
     final authState = ref.watch(authStateProvider);
     final currentUser = authState.value;
+    final membersAsync = ref.watch(memberProfilesProvider(group.members));
 
     return Scaffold(
       appBar: AppBar(
         title: Text(group.name),
         actions: [
           IconButton(
+            icon: const Icon(Icons.share),
+            onPressed: () => _shareGroup(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.info_outline),
-            onPressed: () => _showGroupInfo(context),
+            onPressed: () => _showGroupInfo(context, membersAsync),
           ),
         ],
       ),
@@ -132,7 +139,16 @@ class GroupDetailsScreen extends ConsumerWidget {
                   itemCount: expenses.length,
                   itemBuilder: (context, index) {
                     final expense = expenses[index];
-                    return _buildExpenseCard(context, expense, currentUser?.id);
+                    return membersAsync.when(
+                      data: (members) => _buildExpenseCard(context, expense, currentUser?.id, members),
+                      loading: () => const Card(
+                        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: ListTile(
+                          title: LinearProgressIndicator(),
+                        ),
+                      ),
+                      error: (_, __) => _buildExpenseCard(context, expense, currentUser?.id, {}),
+                    );
                   },
                 );
               },
@@ -178,9 +194,14 @@ class GroupDetailsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildExpenseCard(BuildContext context, Expense expense, String? currentUserId) {
+  Widget _buildExpenseCard(BuildContext context, Expense expense, String? currentUserId, Map<String, dynamic> members) {
     final isPaidByCurrentUser = expense.paidBy == currentUserId;
     final userShare = currentUserId != null ? (expense.splitMap[currentUserId] ?? 0.0) : 0.0;
+    
+    // Get payer name from members map, fallback to ID
+    final payerName = members.isNotEmpty && members[expense.paidBy] != null 
+        ? members[expense.paidBy].name 
+        : expense.paidBy;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -199,49 +220,46 @@ class GroupDetailsScreen extends ConsumerWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${CurrencyFormatter.format(expense.amount)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: 4),
             Text(
-              'Paid by ${isPaidByCurrentUser ? "You" : "Member"}',
+              'Paid by: $payerName',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+            const SizedBox(height: 8),
             Text(
-              DateFormat('MMM dd, yyyy').format(expense.date),
+              'Date: ${DateFormat('MMMM dd, yyyy').format(expense.date)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-          ],
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
             Text(
-              CurrencyFormatter.format(expense.amount),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              'Split Details',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            if (userShare > 0) ...[
-              const SizedBox(height: 4),
-              Text(
-                'You owe ${CurrencyFormatter.formatCompact(userShare)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.orange.shade700,
-                    ),
-              ),
-            ] else if (isPaidByCurrentUser) ...[
-              const SizedBox(height: 4),
-              Text(
-                'You paid',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.green.shade700,
-                    ),
-              ),
-            ],
+            const SizedBox(height: 8),
+            ...expense.splitMap.entries.map((entry) {
+              final memberName = members.isNotEmpty && members[entry.key] != null 
+                  ? members[entry.key].name 
+                  : entry.key;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(memberName),
+                    Text(CurrencyFormatter.format(entry.value)),
+                  ],
+                ),
+              );
+            }).toList(),
           ],
         ),
-        onTap: () {
-          _showExpenseDetails(context, expense);
-        },
       ),
     );
   }
@@ -305,36 +323,79 @@ class GroupDetailsScreen extends ConsumerWidget {
     );
   }
 
-  void _showGroupInfo(BuildContext context) {
+  void _showGroupInfo(BuildContext context, AsyncValue<Map<String, dynamic>> membersAsync) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(group.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Group ID: ${group.id}'),
-            const SizedBox(height: 8),
-            Text('Members: ${group.members.length}'),
-            const SizedBox(height: 16),
-            const Text('Balances:', style: TextStyle(fontWeight: FontWeight.bold)),
-            ...group.balances.entries.map((entry) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Member ${entry.key}: ${CurrencyFormatter.formatWithSign(entry.value)}',
-                ),
-              );
-            }).toList(),
+      builder: (context) => membersAsync.when(
+        data: (members) => AlertDialog(
+          title: Text(group.name),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Group ID: ${group.id}'),
+              const SizedBox(height: 8),
+              Text('Members: ${group.members.length}'),
+              const SizedBox(height: 16),
+              const Text('Balances:', style: TextStyle(fontWeight: FontWeight.bold)),
+              ...group.balances.entries.map((entry) {
+                final memberName = members.isNotEmpty && members[entry.key] != null 
+                    ? members[entry.key].name 
+                    : entry.key;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '$memberName: ${CurrencyFormatter.formatWithSign(entry.value)}',
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+        loading: () => AlertDialog(
+          title: Text(group.name),
+          content: const CircularProgressIndicator(),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+        error: (_, __) => AlertDialog(
+          title: Text(group.name),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Group ID: ${group.id}'),
+              const SizedBox(height: 8),
+              Text('Members: ${group.members.length}'),
+              const SizedBox(height: 16),
+              const Text('Balances:', style: TextStyle(fontWeight: FontWeight.bold)),
+              ...group.balances.entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${entry.key}: ${CurrencyFormatter.formatWithSign(entry.value)}',
+                  ),
+                );
+              }).toList(),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -349,5 +410,11 @@ class GroupDetailsScreen extends ConsumerWidget {
     if (balance > 0) return Colors.green.shade700;
     if (balance < 0) return Colors.orange.shade700;
     return Theme.of(context).textTheme.bodyMedium?.color ?? Colors.black;
+  }
+
+  void _shareGroup(BuildContext context) {
+    final message =
+        'Join my group "${group.name}" on Contri!\n\nGroup ID: ${group.id}\n\nInstall Contri and use this ID to join the group.';
+    Share.share(message);
   }
 }

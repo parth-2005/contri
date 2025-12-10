@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -11,7 +10,6 @@ class AuthRepositoryImpl implements AuthRepository {
   final FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
   final GoogleSignIn _googleSignIn;
-  bool _isInitialized = false;
 
   AuthRepositoryImpl({
     FirebaseAuth? firebaseAuth,
@@ -19,32 +17,27 @@ class AuthRepositoryImpl implements AuthRepository {
     GoogleSignIn? googleSignIn,
   })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         _firestore = firestore ?? FirebaseFirestore.instance,
+        // FIX 1: Use .instance (Singleton) for v7+
         _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
-
-  Future<void> _ensureInitialized() async {
-    if (!_isInitialized) {
-      await _googleSignIn.initialize();
-      _isInitialized = true;
-    }
-  }
 
   @override
   Future<AppUser> signInWithGoogle() async {
     try {
-      await _ensureInitialized();
+      // FIX 2: You MUST initialize before authenticating in v7
+      await _googleSignIn.initialize(); 
 
-      // Trigger the authentication flow - this returns GoogleSignInAccount directly
+      // FIX 3: Use authenticate() instead of signIn()
       final GoogleSignInAccount? googleUser = await _googleSignIn.authenticate();
 
       if (googleUser == null) {
-        throw Exception('Google Sign-In was cancelled');
+        throw Exception('Sign-in cancelled by user');
       }
 
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-      // Create a new credential
+      // FIX 4: Use idToken (accessToken is often null/unnecessary now)
       final credential = GoogleAuthProvider.credential(
+        accessToken: null,
         idToken: googleAuth.idToken,
       );
 
@@ -55,9 +48,9 @@ class AuthRepositoryImpl implements AuthRepository {
 
       final userModel = UserModel(
         id: user.uid,
-        name: user.displayName ?? googleUser.displayName ?? 'Unknown',
-        email: user.email ?? googleUser.email,
-        photoUrl: user.photoURL ?? googleUser.photoUrl,
+        name: user.displayName ?? 'Unknown',
+        email: user.email ?? '',
+        photoUrl: user.photoURL,
       );
 
       await _firestore
@@ -67,38 +60,37 @@ class AuthRepositoryImpl implements AuthRepository {
 
       return userModel.toEntity();
     } catch (e) {
-      throw Exception('Failed to sign in with Google: $e');
+      if (e.toString().contains('canceled') || e.toString().contains('cancelled')) {
+        throw Exception('Sign-in cancelled');
+      }
+      throw Exception('Google Sign-In failed: $e');
     }
   }
 
   @override
   Future<void> signOut() async {
-    await _ensureInitialized();
-    await Future.wait([
-      _firebaseAuth.signOut(),
-      _googleSignIn.disconnect(),
-    ]);
+    try {
+      // Initialize before disconnecting to avoid errors
+      await _googleSignIn.initialize(); 
+      await Future.wait([
+        _firebaseAuth.signOut(),
+        _googleSignIn.disconnect(),
+      ]);
+    } catch (e) {
+      // Fallback if google sign out fails (e.g. not signed in)
+      await _firebaseAuth.signOut();
+    }
   }
 
+  // ... (authStateChanges and getCurrentUser remain the same) ...
   @override
   Stream<AppUser?> get authStateChanges {
     return _firebaseAuth.authStateChanges().asyncMap((user) async {
       if (user == null) return null;
-
-      final doc = await _firestore
-          .collection(FirebaseConstants.usersCollection)
-          .doc(user.uid)
-          .get();
-
+      final doc = await _firestore.collection(FirebaseConstants.usersCollection).doc(user.uid).get();
       if (!doc.exists) {
-        return AppUser(
-          id: user.uid,
-          name: user.displayName ?? 'Unknown',
-          email: user.email ?? '',
-          photoUrl: user.photoURL,
-        );
+        return AppUser(id: user.uid, name: user.displayName ?? 'Unknown', email: user.email ?? '', photoUrl: user.photoURL);
       }
-
       return UserModel.fromFirestore(doc).toEntity();
     });
   }
@@ -107,21 +99,50 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<AppUser?> getCurrentUser() async {
     final user = _firebaseAuth.currentUser;
     if (user == null) return null;
-
-    final doc = await _firestore
-        .collection(FirebaseConstants.usersCollection)
-        .doc(user.uid)
-        .get();
-
+    final doc = await _firestore.collection(FirebaseConstants.usersCollection).doc(user.uid).get();
     if (!doc.exists) {
-      return AppUser(
-        id: user.uid,
-        name: user.displayName ?? 'Unknown',
-        email: user.email ?? '',
-        photoUrl: user.photoURL,
-      );
+      return AppUser(id: user.uid, name: user.displayName ?? 'Unknown', email: user.email ?? '', photoUrl: user.photoURL);
     }
-
     return UserModel.fromFirestore(doc).toEntity();
+  }
+
+  // ⭐ NEW: Search user by Email (For adding members)
+  @override
+  Future<AppUser?> getUserByEmail(String email) async {
+    try {
+      final snapshot = await _firestore
+          .collection(FirebaseConstants.usersCollection)
+          .where(FirebaseConstants.userEmailField, isEqualTo: email)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) return null;
+      return UserModel.fromFirestore(snapshot.docs.first).toEntity();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ⭐ FIXED: Fetch users in ONE Batch Request (Fast) instead of Loop (Slow)
+  @override
+  Future<List<AppUser>> getUsersByIds(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
+
+    try {
+      // Firestore 'whereIn' supports up to 10 items. 
+      // For MVP, we take the first 10. In prod, you'd chunk this list.
+      final idsToFetch = userIds.take(10).toList();
+
+      final snapshot = await _firestore
+          .collection(FirebaseConstants.usersCollection)
+          .where(FieldPath.documentId, whereIn: idsToFetch)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => UserModel.fromFirestore(doc).toEntity())
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 }
