@@ -1,0 +1,28 @@
+/// Firestore Collection Names
+class FirebaseConstants {
+  // Collection Names
+  static const String usersCollection = 'users';
+  static const String groupsCollection = 'groups';
+  static const String expensesCollection = 'expenses';
+  
+  // Field Names - Users
+  static const String userNameField = 'name';
+  static const String userEmailField = 'email';
+  static const String userPhotoUrlField = 'photoUrl';
+  static const String userTotalOwedField = 'total_owed';
+  
+  // Field Names - Groups
+  static const String groupNameField = 'name';
+  static const String groupMembersField = 'members';
+  static const String groupBalancesField = 'balances';
+  static const String groupCreatedAtField = 'createdAt';
+  
+  // Field Names - Expenses
+  static const String expenseGroupIdField = 'groupId';
+  static const String expenseDescriptionField = 'description';
+  static const String expenseAmountField = 'amount';
+  static const String expensePaidByField = 'paidBy';
+  static const String expenseSplitMapField = 'splitMap';
+  static const String expenseDateField = 'date';
+  static const String expenseCreatedAtField = 'createdAt';
+}

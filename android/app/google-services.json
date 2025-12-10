@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "250076895486",
+    "project_id": "contri-568d7",
+    "storage_bucket": "contri-568d7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:250076895486:android:6243c054ad8381ec532daf",
+        "android_client_info": {
+          "package_name": "com.example.contri"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "250076895486-671fj9vdo6krpac4eh16rafukdk5i01g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBreIm1E3OrbEUPRr2FnTmKhX9_ExmXUqs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "250076895486-671fj9vdo6krpac4eh16rafukdk5i01g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
