@@ -88,6 +88,97 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     await batch.commit();
   }
 
+  /// **UPDATE EXPENSE METHOD**
+  /// Reverses old expense balance updates and applies new ones atomically
+  @override
+  Future<void> updateExpense({
+    required String groupId,
+    required String expenseId,
+    required String description,
+    required double amount,
+    required String paidBy,
+    required Map<String, double> splitMap,
+  }) async {
+    // Fetch the old expense to calculate reversal
+    final oldExpenseDoc = await _firestore
+        .collection(FirebaseConstants.expensesCollection)
+        .doc(expenseId)
+        .get();
+
+    if (!oldExpenseDoc.exists) {
+      throw Exception('Expense not found');
+    }
+
+    final oldExpense = ExpenseModel.fromFirestore(oldExpenseDoc);
+
+    // Step 1: Calculate balance updates to REVERSE the old expense
+    final Map<String, double> reverseUpdates = {};
+    reverseUpdates[oldExpense.paidBy] = -oldExpense.amount;
+
+    oldExpense.splitMap.forEach((userId, owedAmount) {
+      if (reverseUpdates.containsKey(userId)) {
+        reverseUpdates[userId] = reverseUpdates[userId]! + owedAmount;
+      } else {
+        reverseUpdates[userId] = owedAmount;
+      }
+    });
+
+    // Step 2: Calculate balance updates for NEW expense
+    final Map<String, double> newUpdates = {};
+    newUpdates[paidBy] = amount;
+
+    splitMap.forEach((userId, owedAmount) {
+      if (newUpdates.containsKey(userId)) {
+        newUpdates[userId] = newUpdates[userId]! - owedAmount;
+      } else {
+        newUpdates[userId] = -owedAmount;
+      }
+    });
+
+    // Step 3: Combine reverse + new updates
+    final Map<String, double> finalUpdates = {};
+    
+    // Add all users affected by either old or new expense
+    final allUserIds = {...reverseUpdates.keys, ...newUpdates.keys};
+    for (final userId in allUserIds) {
+      final reversal = reverseUpdates[userId] ?? 0.0;
+      final newChange = newUpdates[userId] ?? 0.0;
+      finalUpdates[userId] = reversal + newChange;
+    }
+
+    // Step 4: Atomic batch update
+    final batch = _firestore.batch();
+
+    // Update the expense document
+    final newExpense = ExpenseModel(
+      id: expenseId,
+      groupId: groupId,
+      description: description,
+      amount: amount,
+      paidBy: paidBy,
+      splitMap: splitMap,
+      date: oldExpense.date,
+    );
+
+    batch.update(oldExpenseDoc.reference, newExpense.toFirestore());
+
+    // Update group balances
+    final groupRef = _firestore
+        .collection(FirebaseConstants.groupsCollection)
+        .doc(groupId);
+
+    finalUpdates.forEach((userId, balanceChange) {
+      if (balanceChange != 0) {
+        batch.update(groupRef, {
+          '${FirebaseConstants.groupBalancesField}.$userId':
+              FieldValue.increment(balanceChange),
+        });
+      }
+    });
+
+    await batch.commit();
+  }
+
   @override
   Stream<List<Expense>> getExpensesForGroup(String groupId) {
     return _firestore
@@ -136,6 +227,66 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     final groupRef = _firestore
         .collection(FirebaseConstants.groupsCollection)
         .doc(expense.groupId);
+
+    balanceUpdates.forEach((userId, balanceChange) {
+      batch.update(groupRef, {
+        '${FirebaseConstants.groupBalancesField}.$userId':
+            FieldValue.increment(balanceChange),
+      });
+    });
+
+    await batch.commit();
+  }
+
+  /// Record a payment - creates a reverse expense to reduce debt
+  /// When user A pays user B some amount towards settlement,
+  /// we create an expense where A paid B that amount
+  @override
+  Future<void> recordPayment({
+    required String groupId,
+    required String fromUserId,
+    required String toUserId,
+    required double amount,
+  }) async {
+    // Create a payment expense
+    // fromUserId is the payer, toUserId is the payee
+    // This effectively reduces the settlement between them
+    
+    final paymentId = _uuid.v4();
+    final now = DateTime.now();
+
+    // Create an expense with description noting it's a payment
+    final payment = ExpenseModel(
+      id: paymentId,
+      groupId: groupId,
+      description: 'Payment settlement',
+      amount: amount,
+      paidBy: fromUserId,
+      splitMap: {toUserId: amount},
+      date: now,
+    );
+
+    // Calculate balance updates
+    // Payer gets credited: +amount
+    // Payee gets debited: -amount
+    final Map<String, double> balanceUpdates = {
+      fromUserId: amount,
+      toUserId: -amount,
+    };
+
+    // Atomic batch update
+    final batch = _firestore.batch();
+
+    // 1. Create the payment expense document
+    final paymentRef = _firestore
+        .collection(FirebaseConstants.expensesCollection)
+        .doc(paymentId);
+    batch.set(paymentRef, payment.toFirestore());
+
+    // 2. Update group balances
+    final groupRef = _firestore
+        .collection(FirebaseConstants.groupsCollection)
+        .doc(groupId);
 
     balanceUpdates.forEach((userId, balanceChange) {
       batch.update(groupRef, {

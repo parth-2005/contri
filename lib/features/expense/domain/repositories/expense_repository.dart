@@ -12,9 +12,28 @@ abstract class ExpenseRepository {
     required Map<String, double> splitMap,
   });
 
+  /// Update an existing expense and recalculate group balances atomically
+  Future<void> updateExpense({
+    required String groupId,
+    required String expenseId,
+    required String description,
+    required double amount,
+    required String paidBy,
+    required Map<String, double> splitMap,
+  });
+
   /// Fetch expenses for a specific group
   Stream<List<Expense>> getExpensesForGroup(String groupId);
 
   /// Delete an expense and revert group balances
   Future<void> deleteExpense(String expenseId);
+
+  /// Record a payment for settlement
+  /// This creates a reverse expense that reduces the debt
+  Future<void> recordPayment({
+    required String groupId,
+    required String fromUserId,
+    required String toUserId,
+    required double amount,
+  });
 }

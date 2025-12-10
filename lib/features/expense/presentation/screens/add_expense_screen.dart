@@ -5,15 +5,21 @@ import '../providers/expense_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/providers/member_provider.dart';
 import '../../../dashboard/domain/entities/group.dart';
+import '../../domain/entities/expense.dart';
 import '../../../../core/utils/currency_formatter.dart';
 
 enum SplitType { equal, custom, percentage }
 
-/// Screen to add a new expense with split calculator
+/// Screen to add/edit an expense with split calculator
 class AddExpenseScreen extends ConsumerStatefulWidget {
   final Group group;
+  final Expense? expenseToEdit;
 
-  const AddExpenseScreen({super.key, required this.group});
+  const AddExpenseScreen({
+    super.key,
+    required this.group,
+    this.expenseToEdit,
+  });
 
   @override
   ConsumerState<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -34,11 +40,20 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     super.initState();
     final authState = ref.read(authStateProvider);
     final currentUser = authState.value;
-    _paidBy = currentUser?.id ?? widget.group.members.first;
     
     // Initialize custom splits
     for (final memberId in widget.group.members) {
       _customSplits[memberId] = 0.0;
+    }
+
+    // If editing, populate fields with existing expense data
+    if (widget.expenseToEdit != null) {
+      _descriptionController.text = widget.expenseToEdit!.description;
+      _amountController.text = widget.expenseToEdit!.amount.toString();
+      _paidBy = widget.expenseToEdit!.paidBy;
+      _customSplits.addAll(widget.expenseToEdit!.splitMap);
+    } else {
+      _paidBy = currentUser?.id ?? widget.group.members.first;
     }
   }
 
@@ -104,19 +119,37 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       final repository = ref.read(expenseRepositoryProvider);
       final splitMap = _calculateSplitMap();
 
-      await repository.createExpense(
-        groupId: widget.group.id,
-        description: _descriptionController.text.trim(),
-        amount: double.parse(_amountController.text),
-        paidBy: _paidBy!,
-        splitMap: splitMap,
-      );
-
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expense added successfully!')),
+      if (widget.expenseToEdit != null) {
+        // Update existing expense
+        await repository.updateExpense(
+          groupId: widget.group.id,
+          expenseId: widget.expenseToEdit!.id,
+          description: _descriptionController.text.trim(),
+          amount: double.parse(_amountController.text),
+          paidBy: _paidBy!,
+          splitMap: splitMap,
         );
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Expense updated successfully!')),
+          );
+        }
+      } else {
+        // Create new expense
+        await repository.createExpense(
+          groupId: widget.group.id,
+          description: _descriptionController.text.trim(),
+          amount: double.parse(_amountController.text),
+          paidBy: _paidBy!,
+          splitMap: splitMap,
+        );
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Expense added successfully!')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -138,7 +171,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Expense'),
+        title: Text(widget.expenseToEdit != null ? 'Edit Expense' : 'Add Expense'),
       ),
       body: Form(
         key: _formKey,
