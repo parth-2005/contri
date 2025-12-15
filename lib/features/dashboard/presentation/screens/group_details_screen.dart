@@ -13,6 +13,7 @@ import '../../../auth/domain/entities/app_user.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/debt_calculator.dart';
 import '../widgets/expense_tile.dart';
+import '../providers/group_providers.dart';
 
 /// Provider for expenses in a group
 final groupExpensesProvider = StreamProvider.family<List<Expense>, String>((ref, groupId) {
@@ -53,6 +54,31 @@ class GroupDetailsScreen extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+            actions: [
+              PopupMenuButton<String>(
+                onSelected: (value) async {
+                  switch (value) {
+                    case 'share':
+                      _shareGroup(context);
+                      break;
+                    case 'info':
+                      _showGroupInfo(context, membersAsync);
+                      break;
+                    case 'delete':
+                      await _confirmAndDeleteGroup(context, ref);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'share', child: Text('Share')),
+                  const PopupMenuItem(value: 'info', child: Text('Group Info')),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete Group'),
+                  ),
+                ],
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
@@ -137,16 +163,6 @@ class GroupDetailsScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.share),
-                onPressed: () => _shareGroup(context),
-              ),
-              IconButton(
-                icon: const Icon(Icons.info_outline),
-                onPressed: () => _showGroupInfo(context, membersAsync),
-              ),
-            ],
           ),
 
           // Settlement Plan Section (Expandable Header Summary)
@@ -271,6 +287,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                         members: members,
                         currentUserId: currentUser?.id,
                         onEdit: () => _editExpense(context, ref, expense),
+                        onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
                       ),
                       loading: () => const Card(
                         margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -283,6 +300,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                         members: {},
                         currentUserId: currentUser?.id,
                         onEdit: () => _editExpense(context, ref, expense),
+                        onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
                       ),
                     );
                   },
@@ -515,6 +533,39 @@ class GroupDetailsScreen extends ConsumerWidget {
     );
   }
 
+  /// Confirm and delete an expense
+  Future<void> _confirmAndDeleteExpense(BuildContext context, WidgetRef ref, Expense expense) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Expense'),
+        content: const Text('Are you sure you want to delete this expense? This will also revert balances.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final repository = ref.read(expenseRepositoryProvider);
+      await repository.deleteExpense(expense.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Expense deleted')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete expense: $e')),
+        );
+      }
+    }
+  }
+
   /// Get balance text
   String _getBalanceText(double balance) {
     if (balance > 0) return 'You will get back';
@@ -643,6 +694,40 @@ class GroupDetailsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Confirm and delete the group
+  Future<void> _confirmAndDeleteGroup(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: const Text('Deleting the group will remove all its expenses. This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final repository = ref.read(groupRepositoryProvider);
+      await repository.deleteGroup(group.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Group deleted')),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete group: $e')),
+        );
+      }
+    }
   }
 
   /// Show Payment Dialog for settling individual debt

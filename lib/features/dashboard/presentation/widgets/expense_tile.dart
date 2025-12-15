@@ -18,6 +18,7 @@ class ExpenseTile extends StatefulWidget {
   final Map<String, AppUser> members;
   final String? currentUserId;
   final VoidCallback onEdit;
+  final VoidCallback? onDelete;
 
   const ExpenseTile({
     super.key,
@@ -25,6 +26,7 @@ class ExpenseTile extends StatefulWidget {
     required this.members,
     this.currentUserId,
     required this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -266,19 +268,35 @@ class _ExpenseTileState extends State<ExpenseTile> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Edit button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.edit, size: 18),
-                      label: Text(
-                        'Edit Expense',
-                        style: GoogleFonts.lato(
-                          fontWeight: FontWeight.w600,
+                  // Edit/Delete actions
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.edit, size: 18),
+                          label: Text(
+                            'Edit Expense',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: widget.onEdit,
                         ),
                       ),
-                      onPressed: widget.onEdit,
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: Text(
+                            'Delete',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: widget.onDelete,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

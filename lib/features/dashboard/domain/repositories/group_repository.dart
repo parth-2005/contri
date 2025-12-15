@@ -25,4 +25,7 @@ abstract class GroupRepository {
 
   /// Join an existing group by ID
   Future<void> joinGroup(String groupId, String userId);
+
+  /// Delete a group and its related data
+  Future<void> deleteGroup(String groupId);
 }

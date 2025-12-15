@@ -111,4 +111,28 @@ class GroupRepositoryImpl implements GroupRepository {
       '${FirebaseConstants.groupBalancesField}.$userId': 0.0,
     });
   }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    // Delete group doc and its expenses in a batch-like safe manner
+    final batch = _firestore.batch();
+
+    final groupRef = _firestore
+        .collection(FirebaseConstants.groupsCollection)
+        .doc(groupId);
+
+    // Query expenses belonging to the group
+    final expensesQuery = await _firestore
+        .collection(FirebaseConstants.expensesCollection)
+        .where(FirebaseConstants.expenseGroupIdField, isEqualTo: groupId)
+        .get();
+
+    for (final doc in expensesQuery.docs) {
+      batch.delete(doc.reference);
+    }
+
+    batch.delete(groupRef);
+
+    await batch.commit();
+  }
 }
