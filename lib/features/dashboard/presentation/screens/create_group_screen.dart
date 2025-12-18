@@ -15,6 +15,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _groupNameController = TextEditingController();
   final List<String> _memberEmails = [];
+  final Map<String, double> _memberShares = {}; // {email: shareCount} - supports decimals (e.g., 0.5 for child)
   final _emailController = TextEditingController();
   bool _isLoading = false;
 
@@ -30,6 +31,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     if (email.isNotEmpty && email.contains('@')) {
       setState(() {
         _memberEmails.add(email);
+        _memberShares[email] = 1.0; // Default share count is 1.0 (supports decimals like 0.5)
         _emailController.clear();
       });
     }
@@ -37,7 +39,15 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
   void _removeMember(int index) {
     setState(() {
+      final email = _memberEmails[index];
       _memberEmails.removeAt(index);
+      _memberShares.remove(email);
+    });
+  }
+
+  void _updateMemberShare(String email, double share) {
+    setState(() {
+      _memberShares[email] = share;
     });
   }
 
@@ -63,9 +73,19 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
       // In production, you'd look up users by email
       final memberIds = [currentUser.id];
 
+      // For now using email as userId - mapping will be implemented later
+      // Build a map of userId -> share count (supports decimals like 0.5 for children)
+      final Map<String, double> defaultShares = {};
+      for (final email in _memberEmails) {
+        defaultShares[email] = _memberShares[email] ?? 1.0;
+      }
+      // Add current user's default share (1.0)
+      defaultShares[currentUser.id] = 1.0;
+
       await repository.createGroup(
         name: _groupNameController.text.trim(),
         members: memberIds,
+        defaultShares: defaultShares,
       );
 
       if (mounted) {
@@ -170,14 +190,41 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _memberEmails.length,
                       itemBuilder: (context, index) {
+                        final email = _memberEmails[index];
+                        final share = _memberShares[email] ?? 1;
                         return ListTile(
                           leading: CircleAvatar(
-                            child: Text(_memberEmails[index][0].toUpperCase()),
+                            child: Text(email[0].toUpperCase()),
                           ),
-                          title: Text(_memberEmails[index]),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: () => _removeMember(index),
+                          title: Text(email),
+                          subtitle: const Text('Share count'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 70,
+                                child: TextFormField(
+                                  initialValue: share.toString(),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                    border: OutlineInputBorder(),
+                                    helperText: '1=adult\n0.5=child',
+                                    helperMaxLines: 2,
+                                  ),
+                                  onChanged: (value) {
+                                    final shares = double.tryParse(value) ?? 1.0;
+                                    _updateMemberShare(email, shares);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline),
+                                onPressed: () => _removeMember(index),
+                              ),
+                            ],
                           ),
                         );
                       },

@@ -8,7 +8,7 @@ import '../../../dashboard/domain/entities/group.dart';
 import '../../domain/entities/expense.dart';
 import '../../../../core/utils/currency_formatter.dart';
 
-enum SplitType { equal, custom, percentage }
+enum SplitType { equal, custom, family }
 
 /// Screen to add/edit an expense with split calculator
 class AddExpenseScreen extends ConsumerStatefulWidget {
@@ -33,6 +33,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   String? _paidBy;
   SplitType _splitType = SplitType.equal;
   final Map<String, double> _customSplits = {};
+  final Map<String, double> _memberShares = {}; // {userId: shareCount} for family split (e.g., 0.5 for child, 1 for adult)
   bool _isLoading = false;
 
   @override
@@ -41,9 +42,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     final authState = ref.read(authStateProvider);
     final currentUser = authState.value;
     
-    // Initialize custom splits
+    // Initialize custom splits and member shares
     for (final memberId in widget.group.members) {
       _customSplits[memberId] = 0.0;
+      // Use defaultShares if available, otherwise default to 1
+      _memberShares[memberId] = widget.group.defaultShares[memberId] ?? 1;
     }
 
     // If editing, populate fields with existing expense data
@@ -80,9 +83,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         splitMap.addAll(_customSplits);
         break;
 
-      case SplitType.percentage:
-        // Similar to custom for now
-        splitMap.addAll(_customSplits);
+      case SplitType.family:
+        // Split based on family shares (defaultShares) - supports decimals (0.5 for child, 1 for adult)
+        final totalShares = _memberShares.values.fold<double>(0.0, (sum, val) => sum + val);
+        if (totalShares > 0) {
+          for (final memberId in widget.group.members) {
+            final shareCount = _memberShares[memberId] ?? 1.0;
+            splitMap[memberId] = double.parse(((amount * shareCount) / totalShares).toStringAsFixed(2));
+          }
+        }
         break;
     }
 
@@ -285,6 +294,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   icon: Icon(Icons.people),
                 ),
                 ButtonSegment(
+                  value: SplitType.family,
+                  label: Text('Family'),
+                  icon: Icon(Icons.family_restroom),
+                ),
+                ButtonSegment(
                   value: SplitType.custom,
                   label: Text('Custom'),
                   icon: Icon(Icons.edit),
@@ -332,7 +346,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                         ...widget.group.members.map((memberId) {
                           final split = _splitType == SplitType.equal
                               ? amount / widget.group.members.length
-                              : _customSplits[memberId] ?? 0.0;
+                              : _splitType == SplitType.family
+                                  ? _calculateSplitMap()[memberId] ?? 0.0
+                                  : _customSplits[memberId] ?? 0.0;
                           final memberName = members.containsKey(memberId)
                               ? members[memberId]!.name
                               : memberId;
@@ -347,7 +363,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Text(memberName),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(memberName),
+                                      if (_splitType == SplitType.family)
+                                        Text(
+                                          'Share: ${(_memberShares[memberId] ?? 1.0).toStringAsFixed(1)}',
+                                          style: Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                    ],
+                                  ),
                                 ),
                                 if (_splitType == SplitType.custom)
                                   SizedBox(
@@ -365,6 +391,27 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                       onChanged: (value) {
                                         setState(() {
                                           _customSplits[memberId] = double.tryParse(value) ?? 0.0;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                else if (_splitType == SplitType.family)
+                                  SizedBox(
+                                    width: 90,
+                                    child: TextFormField(
+                                      initialValue: (_memberShares[memberId] ?? 1.0).toString(),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Share',
+                                        isDense: true,
+                                        hintText: '1 or 0.5',
+                                      ),
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                                      ],
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _memberShares[memberId] = double.tryParse(value) ?? 1.0;
                                         });
                                       },
                                     ),
@@ -420,7 +467,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                         ...widget.group.members.map((memberId) {
                           final split = _splitType == SplitType.equal
                               ? amount / widget.group.members.length
-                              : _customSplits[memberId] ?? 0.0;
+                              : _splitType == SplitType.family
+                                  ? _calculateSplitMap()[memberId] ?? 0.0
+                                  : _customSplits[memberId] ?? 0.0;
 
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -432,7 +481,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Text(memberId),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(memberId),
+                                      if (_splitType == SplitType.family)
+                                        Text(
+                                          'Share: ${(_memberShares[memberId] ?? 1.0).toStringAsFixed(1)}',
+                                          style: Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                    ],
+                                  ),
                                 ),
                                 if (_splitType == SplitType.custom)
                                   SizedBox(
@@ -450,6 +509,27 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                       onChanged: (value) {
                                         setState(() {
                                           _customSplits[memberId] = double.tryParse(value) ?? 0.0;
+                                        });
+                                      },
+                                    ),
+                                  )
+                                else if (_splitType == SplitType.family)
+                                  SizedBox(
+                                    width: 90,
+                                    child: TextFormField(
+                                      initialValue: (_memberShares[memberId] ?? 1.0).toString(),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Share',
+                                        isDense: true,
+                                        hintText: '1 or 0.5',
+                                      ),
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                                      ],
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _memberShares[memberId] = double.tryParse(value) ?? 1.0;
                                         });
                                       },
                                     ),

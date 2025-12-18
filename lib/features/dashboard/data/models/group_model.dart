@@ -8,6 +8,7 @@ class GroupModel {
   final String name;
   final List<String> members;
   final Map<String, double> balances;
+  final Map<String, double> defaultShares;
   final DateTime? createdAt;
 
   GroupModel({
@@ -15,6 +16,7 @@ class GroupModel {
     required this.name,
     required this.members,
     required this.balances,
+    this.defaultShares = const {},
     this.createdAt,
   });
 
@@ -25,6 +27,7 @@ class GroupModel {
       name: name,
       members: members,
       balances: balances,
+      defaultShares: defaultShares,
       createdAt: createdAt,
     );
   }
@@ -36,6 +39,7 @@ class GroupModel {
       name: group.name,
       members: group.members,
       balances: group.balances,
+      defaultShares: group.defaultShares,
       createdAt: group.createdAt,
     );
   }
@@ -46,6 +50,7 @@ class GroupModel {
       FirebaseConstants.groupNameField: name,
       FirebaseConstants.groupMembersField: members,
       FirebaseConstants.groupBalancesField: balances,
+      FirebaseConstants.groupDefaultSharesField: defaultShares,
       FirebaseConstants.groupCreatedAtField: FieldValue.serverTimestamp(),
     };
   }
@@ -59,6 +64,10 @@ class GroupModel {
       members: List<String>.from(data[FirebaseConstants.groupMembersField] ?? []),
       balances: Map<String, double>.from(
         (data[FirebaseConstants.groupBalancesField] as Map<String, dynamic>? ?? {})
+            .map((key, value) => MapEntry(key, (value as num).toDouble())),
+      ),
+      defaultShares: Map<String, double>.from(
+        (data[FirebaseConstants.groupDefaultSharesField] as Map<String, dynamic>? ?? {})
             .map((key, value) => MapEntry(key, (value as num).toDouble())),
       ),
       createdAt: data[FirebaseConstants.groupCreatedAtField] != null

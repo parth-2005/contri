@@ -6,6 +6,7 @@ class Group extends Equatable {
   final String name;
   final List<String> members; // List of User IDs
   final Map<String, double> balances; // {userId: balance}
+  final Map<String, double> defaultShares; // {userId: shareCount} for quick expense entry (e.g., 0.5 for child, 1 for adult)
   final DateTime? createdAt;
 
   const Group({
@@ -13,6 +14,7 @@ class Group extends Equatable {
     required this.name,
     required this.members,
     required this.balances,
+    this.defaultShares = const {},
     this.createdAt,
   });
 
@@ -22,5 +24,5 @@ class Group extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, name, members, balances, createdAt];
+  List<Object?> get props => [id, name, members, balances, defaultShares, createdAt];
 }

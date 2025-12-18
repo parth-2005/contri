@@ -6,6 +6,7 @@ abstract class GroupRepository {
   Future<void> createGroup({
     required String name,
     required List<String> members,
+    Map<String, double> defaultShares = const {},
   });
 
   /// Get all groups where user is a member

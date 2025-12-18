@@ -20,6 +20,7 @@ class GroupRepositoryImpl implements GroupRepository {
   Future<void> createGroup({
     required String name,
     required List<String> members,
+    Map<String, double> defaultShares = const {},
   }) async {
     final groupId = _uuid.v4();
 
@@ -34,6 +35,7 @@ class GroupRepositoryImpl implements GroupRepository {
       name: name,
       members: members,
       balances: balances,
+      defaultShares: defaultShares,
     );
 
     await _firestore

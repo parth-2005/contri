@@ -15,6 +15,7 @@ class FirebaseConstants {
   static const String groupNameField = 'name';
   static const String groupMembersField = 'members';
   static const String groupBalancesField = 'balances';
+  static const String groupDefaultSharesField = 'defaultShares';
   static const String groupCreatedAtField = 'createdAt';
   
   // Field Names - Expenses
