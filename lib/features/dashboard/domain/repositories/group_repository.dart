@@ -15,6 +15,9 @@ abstract class GroupRepository {
   /// Get a specific group by ID
   Future<Group?> getGroupById(String groupId);
 
+  /// Watch a specific group by ID (live updates)
+  Stream<Group?> watchGroupById(String groupId);
+
   /// Update group name
   Future<void> updateGroupName(String groupId, String newName);
 

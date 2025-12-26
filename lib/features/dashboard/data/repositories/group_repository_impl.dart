@@ -68,6 +68,15 @@ class GroupRepositoryImpl implements GroupRepository {
   }
 
   @override
+  Stream<Group?> watchGroupById(String groupId) {
+    return _firestore
+        .collection(FirebaseConstants.groupsCollection)
+        .doc(groupId)
+        .snapshots()
+        .map((doc) => doc.exists ? GroupModel.fromFirestore(doc).toEntity() : null);
+  }
+
+  @override
   Future<void> updateGroupName(String groupId, String newName) async {
     await _firestore
         .collection(FirebaseConstants.groupsCollection)

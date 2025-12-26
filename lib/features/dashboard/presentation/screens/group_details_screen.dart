@@ -71,7 +71,10 @@ class GroupDetailsScreen extends ConsumerWidget {
     final expensesAsync = ref.watch(groupExpensesProvider(group.id));
     final authState = ref.watch(authStateProvider);
     final currentUser = authState.value;
-    final membersAsync = ref.watch(memberProfilesProvider(group.members));
+    // Live group stream for reactive balances/members
+    final liveGroupAsync = ref.watch(groupByIdProvider(group.id));
+    final effectiveGroup = liveGroupAsync.value ?? group;
+    final membersAsync = ref.watch(memberProfilesProvider(effectiveGroup.members));
 
     return Scaffold(
       body: CustomScrollView(
@@ -99,7 +102,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                       _shareGroup(context);
                       break;
                     case 'info':
-                      _showGroupInfo(context, membersAsync);
+                      _showGroupInfo(context, membersAsync, ref);
                       break;
                     case 'delete':
                       await _confirmAndDeleteGroup(context, ref);
@@ -136,8 +139,8 @@ class GroupDetailsScreen extends ConsumerWidget {
                     child: Builder(
                       builder: (ctx) {
                         final balance = currentUser != null
-                            ? group.getBalanceForUser(currentUser.id)
-                            : 0.0;
+                          ? effectiveGroup.getBalanceForUser(currentUser.id)
+                          : 0.0;
                         final isOwe = balance < 0;
                         final displayText = isOwe ? 'You Owe' : 'You Lend';
                         final displayColor = isOwe ? Colors.red : Colors.green;
@@ -273,7 +276,7 @@ class GroupDetailsScreen extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: membersAsync.when(
                 data: (members) {
-                  final settlements = DebtCalculator.calculateSettlements(group.balances);
+                  final settlements = DebtCalculator.calculateSettlements(effectiveGroup.balances);
                   if (settlements.isEmpty) {
                     return Text(
                       'Everyone is settled up! 🎉',
@@ -477,9 +480,10 @@ class GroupDetailsScreen extends ConsumerWidget {
 
   /// Show Settlement Plan Dialog with Payment Interface
   void _showSettlementPlan(BuildContext context, WidgetRef ref, String? currentUserId) {
-    ref.read(memberProfilesProvider(group.members)).when(
+    final effectiveGroup = ref.read(groupByIdProvider(group.id)).value ?? group;
+    ref.read(memberProfilesProvider(effectiveGroup.members)).when(
       data: (members) {
-        final settlements = DebtCalculator.calculateSettlements(group.balances);
+        final settlements = DebtCalculator.calculateSettlements(effectiveGroup.balances);
         // Filter to show only settlements where current user owes
         final myPayments = settlements.where((s) => s.fromUserId == currentUserId).toList();
 
@@ -734,13 +738,15 @@ class GroupDetailsScreen extends ConsumerWidget {
   void _showGroupInfo(
     BuildContext context,
     AsyncValue<Map<String, AppUser>> membersAsync,
+    WidgetRef ref,
   ) {
+    final effectiveGroup = ref.read(groupByIdProvider(group.id)).value ?? group;
     showDialog(
       context: context,
       builder: (context) => membersAsync.when(
         data: (members) => AlertDialog(
           title: Text(
-            group.name,
+            effectiveGroup.name,
             style: GoogleFonts.lato(fontWeight: FontWeight.w700),
           ),
           content: SingleChildScrollView(
@@ -758,12 +764,12 @@ class GroupDetailsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
-                  group.id,
+                  effectiveGroup.id,
                   style: GoogleFonts.lato(fontSize: 13),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Members (${group.members.length})',
+                  'Members (${effectiveGroup.members.length})',
                   style: GoogleFonts.lato(
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
@@ -783,7 +789,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                         ),
                         Text(
                           CurrencyFormatter.formatWithSign(
-                            group.getBalanceForUser(entry.key),
+                            effectiveGroup.getBalanceForUser(entry.key),
                           ),
                           style: GoogleFonts.lato(
                             fontWeight: FontWeight.w600,
@@ -809,7 +815,7 @@ class GroupDetailsScreen extends ConsumerWidget {
         ),
         loading: () => AlertDialog(
           title: Text(
-            group.name,
+            effectiveGroup.name,
             style: GoogleFonts.lato(fontWeight: FontWeight.w700),
           ),
           content: const CircularProgressIndicator(),
@@ -825,7 +831,7 @@ class GroupDetailsScreen extends ConsumerWidget {
         ),
         error: (error, stack) => AlertDialog(
           title: Text(
-            group.name,
+            effectiveGroup.name,
             style: GoogleFonts.lato(fontWeight: FontWeight.w700),
           ),
           content: Text(

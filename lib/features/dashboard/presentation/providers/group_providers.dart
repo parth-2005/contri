@@ -24,3 +24,9 @@ final userGroupsProvider = StreamProvider<List<Group>>((ref) {
     error: (_, __) => Stream.value([]),
   );
 });
+
+/// Live provider for a specific group by ID
+final groupByIdProvider = StreamProvider.family<Group?, String>((ref, groupId) {
+  final repository = ref.watch(groupRepositoryProvider);
+  return repository.watchGroupById(groupId);
+});
