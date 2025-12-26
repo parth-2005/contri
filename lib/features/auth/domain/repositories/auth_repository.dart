@@ -19,4 +19,12 @@ abstract class AuthRepository {
 
   /// Get multiple users by their IDs (returns List, not Map)
   Future<List<AppUser>> getUsersByIds(List<String> userIds);
+
+  /// Update user profile
+  Future<void> updateUserProfile({
+    required String userId,
+    String? name,
+    String? phoneNumber,
+    String? photoUrl,
+  });
 }

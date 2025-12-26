@@ -27,6 +27,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     required double amount,
     required String paidBy,
     required Map<String, double> splitMap,
+    String? splitType,
+    Map<String, double>? familyShares,
   }) async {
     // Generate expense ID
     final expenseId = _uuid.v4();
@@ -39,6 +41,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       amount: amount,
       paidBy: paidBy,
       splitMap: splitMap,
+      splitType: splitType,
+      familyShares: familyShares,
       date: DateTime.now(),
     );
 
@@ -98,6 +102,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     required double amount,
     required String paidBy,
     required Map<String, double> splitMap,
+    String? splitType,
+    Map<String, double>? familyShares,
   }) async {
     // Fetch the old expense to calculate reversal
     final oldExpenseDoc = await _firestore
@@ -157,6 +163,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       amount: amount,
       paidBy: paidBy,
       splitMap: splitMap,
+      splitType: splitType,
+      familyShares: familyShares,
       date: oldExpense.date,
     );
 

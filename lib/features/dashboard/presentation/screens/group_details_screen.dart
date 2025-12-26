@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../domain/entities/group.dart';
 import '../../../expense/domain/entities/expense.dart';
@@ -12,6 +14,8 @@ import '../../../auth/presentation/providers/member_provider.dart';
 import '../../../auth/domain/entities/app_user.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/debt_calculator.dart';
+import '../../../../core/presentation/widgets/shimmer_loading.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../widgets/expense_tile.dart';
 import '../providers/group_providers.dart';
 
@@ -31,6 +35,36 @@ class GroupDetailsScreen extends ConsumerWidget {
   final Group group;
 
   const GroupDetailsScreen({super.key, required this.group});
+
+  /// Calculate personal expense (total paid - total received back)
+  double _calculatePersonalExpense(
+    List<Expense> expenses,
+    String? currentUserId,
+  ) {
+    if (currentUserId == null) return 0.0;
+
+    // Total amount paid by current user
+    final totalPaid = expenses
+        .where((e) => e.paidBy == currentUserId)
+        .fold<double>(0, (sum, e) => sum + e.amount);
+
+    // Total amount the current user owes others (from splitMap)
+    final totalOwed = expenses.fold<double>(0, (sum, e) {
+      return sum + (e.splitMap[currentUserId] ?? 0);  
+    });
+
+    // Personal expense = Total paid - Total owed by others (what I get back)
+    // Which is: Total paid - (Total paid by me - Net balance I owe)
+    // Simpler way: Personal expense = Total paid by me - Total received back from others
+    // Total received = Total paid - (Total paid - what I'm paying my share on)
+    
+    // Actually: Personal Expense = Amount I paid that I didn't split = Total I paid - (Total paid by others that I was in split)
+    final receivedFromOthers = expenses
+        .where((e) => e.paidBy != currentUserId)
+        .fold<double>(0, (sum, e) => sum + (e.splitMap[currentUserId] ?? 0));
+
+    return totalPaid - receivedFromOthers;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,6 +92,9 @@ class GroupDetailsScreen extends ConsumerWidget {
               PopupMenuButton<String>(
                 onSelected: (value) async {
                   switch (value) {
+                    case 'qr':
+                      _showQrCode(context);
+                      break;
                     case 'share':
                       _shareGroup(context);
                       break;
@@ -70,6 +107,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'qr', child: Text('Show QR Code')),
                   const PopupMenuItem(value: 'share', child: Text('Share')),
                   const PopupMenuItem(value: 'info', child: Text('Group Info')),
                   const PopupMenuItem(
@@ -92,73 +130,136 @@ class GroupDetailsScreen extends ConsumerWidget {
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 80, left: 16, right: 16, bottom: 16),
-                  child: Builder(
-                    builder: (ctx) {
-                      final balance = currentUser != null
-                          ? group.getBalanceForUser(currentUser.id)
-                          : 0.0;
-                      final isOwe = balance < 0;
-                      final displayText = isOwe ? 'You Owe' : 'You Lend';
-                      final displayColor = isOwe ? Colors.red : Colors.green;
+                  padding: const EdgeInsets.only(top: 60, left: 16, right: 16, bottom: 12),
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: Builder(
+                      builder: (ctx) {
+                        final balance = currentUser != null
+                            ? group.getBalanceForUser(currentUser.id)
+                            : 0.0;
+                        final isOwe = balance < 0;
+                        final displayText = isOwe ? 'You Owe' : 'You Lend';
+                        final displayColor = isOwe ? Colors.red : Colors.green;
 
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Your Balance Status
-                          Text(
-                            displayText,
-                            style: GoogleFonts.lato(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            CurrencyFormatter.format(balance.abs()),
-                            style: GoogleFonts.lato(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w700,
-                              color: displayColor,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _getBalanceText(balance),
-                            style: GoogleFonts.lato(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white.withValues(alpha: 0.9),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          // "Settle Up" Button
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Theme.of(context).colorScheme.primary,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              onPressed: () => _showSettlementPlan(context, ref, currentUser?.id),
-                              child: Text(
-                                'Settle Up',
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Your Balance Status
+                              Text(
+                                displayText,
                                 style: GoogleFonts.lato(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withValues(alpha: 0.8),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              Text(
+                                CurrencyFormatter.format(balance.abs()),
+                                style: GoogleFonts.lato(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w700,
+                                  color: displayColor,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _getBalanceText(balance),
+                                style: GoogleFonts.lato(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // Personal Expense
+                              expensesAsync.when(
+                                data: (expenses) {
+                                  final personalExpense =
+                                      _calculatePersonalExpense(expenses, currentUser?.id);
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'My Personal Expense',
+                                        style: GoogleFonts.lato(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white.withValues(alpha: 0.7),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        CurrencyFormatter.format(personalExpense),
+                                        style: GoogleFonts.lato(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                                loading: () => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'My Personal Expense',
+                                      style: GoogleFonts.lato(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white.withValues(alpha: 0.7),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    SizedBox(
+                                      width: 50,
+                                      height: 16,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                error: (_, __) => const SizedBox.shrink(),
+                              ),
+                              const SizedBox(height: 14),
+                              // "Settle Up" Button
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Theme.of(context).colorScheme.primary,
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  onPressed: () => _showSettlementPlan(context, ref, currentUser?.id),
+                                  child: Text(
+                                    'Settle Up',
+                                    style: GoogleFonts.lato(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -277,50 +378,54 @@ class GroupDetailsScreen extends ConsumerWidget {
                 );
               }
 
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final expense = expenses[index];
-                    return membersAsync.when(
-                      data: (members) => ExpenseTile(
-                        expense: expense,
-                        members: members,
-                        currentUserId: currentUser?.id,
-                        onEdit: () => _editExpense(context, ref, expense),
-                        onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
-                      ),
-                      loading: () => const Card(
-                        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        child: ListTile(
-                          title: LinearProgressIndicator(),
-                        ),
-                      ),
-                      error: (error, stackTrace) => ExpenseTile(
-                        expense: expense,
-                        members: {},
-                        currentUserId: currentUser?.id,
-                        onEdit: () => _editExpense(context, ref, expense),
-                        onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
-                      ),
-                    );
-                  },
-                  childCount: expenses.length,
-                ),
-              );
-            },
-            loading: () => SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Loading expenses...',
-                      style: GoogleFonts.lato(),
+              final sortedExpenses = [...expenses]..sort((a, b) => b.date.compareTo(a.date));
+              final Map<String, List<Expense>> groupedByMonth = {};
+
+              for (final expense in sortedExpenses) {
+                final monthKey = DateFormat('MMMM yyyy').format(expense.date);
+                groupedByMonth.putIfAbsent(monthKey, () => []).add(expense);
+              }
+
+              final slivers = groupedByMonth.entries.expand((entry) {
+                return [
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _MonthHeaderDelegate(label: entry.key),
+                  ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final expense = entry.value[index];
+                        return membersAsync.when(
+                          data: (members) => ExpenseTile(
+                            expense: expense,
+                            members: members,
+                            currentUserId: currentUser?.id,
+                            onEdit: () => _editExpense(context, ref, expense),
+                            onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
+                          ),
+                          loading: () => const ExpenseTileShimmer(),
+                          error: (error, stackTrace) => ExpenseTile(
+                            expense: expense,
+                            members: {},
+                            currentUserId: currentUser?.id,
+                            onEdit: () => _editExpense(context, ref, expense),
+                            onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
+                          ),
+                        );
+                      },
+                      childCount: entry.value.length,
                     ),
-                  ],
-                ),
+                  ),
+                ];
+              }).toList();
+
+              return SliverMainAxisGroup(slivers: slivers);
+            },
+            loading: () => SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => const ExpenseTileShimmer(),
+                childCount: 6,
               ),
             ),
             error: (error, stack) => SliverFillRemaining(
@@ -575,9 +680,54 @@ class GroupDetailsScreen extends ConsumerWidget {
 
   /// Share group
   void _shareGroup(BuildContext context) {
+    final deepLink = 'contri://join/${group.id}';
     final message =
-        'Join my group "${group.name}" on Contri!\n\nGroup ID: ${group.id}\n\nInstall Contri and use this ID to join the group.';
+        'Join my group "${group.name}" on Contri!\n\nUse this link: $deepLink';
     Share.share(message);
+  }
+
+  void _showQrCode(BuildContext context) {
+    final deepLink = 'contri://join/${group.id}';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Join via QR',
+          style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+        ),
+        content: SizedBox(
+          width: 260,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 220,
+                height: 220,
+                child: QrImageView(
+                  data: deepLink,
+                  version: QrVersions.auto,
+                  eyeStyle: const QrEyeStyle(color: Colors.black),
+                  dataModuleStyle: const QrDataModuleStyle(color: Colors.black),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                deepLink,
+                style: GoogleFonts.lato(fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Show group info dialog
@@ -880,5 +1030,39 @@ class GroupDetailsScreen extends ConsumerWidget {
       }
     }
   }
+}
+
+class _MonthHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final String label;
+
+  _MonthHeaderDelegate({required this.label});
+
+  @override
+  double get minExtent => 44;
+
+  @override
+  double get maxExtent => 44;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppTheme.secondaryBeige.withValues(alpha: overlapsContent ? 0.96 : 1),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          label,
+          style: GoogleFonts.lato(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: Theme.of(context).colorScheme.onSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _MonthHeaderDelegate oldDelegate) => oldDelegate.label != label;
 }
 

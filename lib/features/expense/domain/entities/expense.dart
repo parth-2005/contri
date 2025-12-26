@@ -8,6 +8,8 @@ class Expense extends Equatable {
   final double amount;
   final String paidBy; // User ID
   final Map<String, double> splitMap; // {userId: amountOwed}
+  final String? splitType; // 'equal' | 'family' | 'custom'
+  final Map<String, double>? familyShares; // {userId: shareCount} when splitType == 'family'
   final DateTime date;
 
   const Expense({
@@ -17,6 +19,8 @@ class Expense extends Equatable {
     required this.amount,
     required this.paidBy,
     required this.splitMap,
+    this.splitType,
+    this.familyShares,
     required this.date,
   });
 
@@ -28,6 +32,8 @@ class Expense extends Equatable {
         amount,
         paidBy,
         splitMap,
+      splitType,
+      familyShares,
         date,
       ];
 }

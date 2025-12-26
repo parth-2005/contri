@@ -1,6 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import '../providers/expense_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/providers/member_provider.dart';
@@ -30,6 +34,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
   
+  final NumberFormat _amountFormat = NumberFormat.decimalPattern('en_IN');
   String? _paidBy;
   SplitType _splitType = SplitType.equal;
   final Map<String, double> _customSplits = {};
@@ -52,11 +57,110 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     // If editing, populate fields with existing expense data
     if (widget.expenseToEdit != null) {
       _descriptionController.text = widget.expenseToEdit!.description;
-      _amountController.text = widget.expenseToEdit!.amount.toString();
+      _amountController.text = _formatAmount(widget.expenseToEdit!.amount.toStringAsFixed(2));
       _paidBy = widget.expenseToEdit!.paidBy;
       _customSplits.addAll(widget.expenseToEdit!.splitMap);
+      
+      // Prefer stored splitType/familyShares when available
+      if (widget.expenseToEdit!.splitType != null) {
+        switch (widget.expenseToEdit!.splitType) {
+          case 'equal':
+            _splitType = SplitType.equal;
+            break;
+          case 'family':
+            _splitType = SplitType.family;
+            break;
+          case 'custom':
+          default:
+            _splitType = SplitType.custom;
+            break;
+        }
+      } else {
+        // Fallback: detect split type
+        _splitType = _detectSplitType(widget.expenseToEdit!);
+      }
+
+      // Populate member shares if stored, else reverse-engineer
+      if (_splitType == SplitType.family) {
+        if (widget.expenseToEdit!.familyShares != null && widget.expenseToEdit!.familyShares!.isNotEmpty) {
+          _memberShares
+            ..clear()
+            ..addAll(widget.expenseToEdit!.familyShares!);
+        } else {
+          _calculateMemberSharesFromSplitMap(
+            widget.expenseToEdit!.amount,
+            widget.expenseToEdit!.splitMap,
+          );
+        }
+      }
     } else {
       _paidBy = currentUser?.id ?? widget.group.members.first;
+    }
+  }
+
+  /// Detect which split type was used for an expense
+  SplitType _detectSplitType(Expense expense) {
+    final amount = expense.amount;
+    final splitMap = expense.splitMap;
+    
+    // Check if it's an equal split
+    final memberCount = widget.group.members.length;
+    final equalAmount = amount / memberCount;
+    final isEqual = splitMap.values.every(
+      (split) => (split - equalAmount).abs() < 0.01,
+    );
+    if (isEqual) return SplitType.equal;
+    
+    // Check if it's a family split (proportional to default shares)
+    final totalDefaultShares = widget.group.defaultShares.values.fold<double>(
+      0.0,
+      (sum, share) => sum + share,
+    );
+    
+    if (totalDefaultShares > 0) {
+      final isFamilySplit = splitMap.entries.every((entry) {
+        final memberId = entry.key;
+        final actualSplit = entry.value;
+        final defaultShare = widget.group.defaultShares[memberId] ?? 1.0;
+        final expectedSplit = (amount * defaultShare) / totalDefaultShares;
+        return (actualSplit - expectedSplit).abs() < 0.01;
+      });
+      
+      if (isFamilySplit) return SplitType.family;
+    }
+    
+    // Otherwise, it's custom
+    return SplitType.custom;
+  }
+
+  /// Calculate member shares from split map (for family split editing)
+  void _calculateMemberSharesFromSplitMap(double amount, Map<String, double> splitMap) {
+    if (amount == 0) return;
+    
+    // Find the total of all splits
+    final totalSplit = splitMap.values.fold<double>(0.0, (sum, val) => sum + val);
+    if (totalSplit == 0) return;
+    
+    // Calculate what share each member must have had
+    // Formula: share = (split / amount) * totalShares
+    // We need to find totalShares first
+    // Let's use the first member as reference: share1 = (split1 / amount) * totalShares
+    // We can normalize assuming the smallest split represents 0.5 or 1 share
+    
+    final splits = splitMap.entries.toList();
+    if (splits.isEmpty) return;
+    
+    // Find minimum split (this will be our base unit)
+    final minSplit = splits.map((e) => e.value).reduce((a, b) => a < b ? a : b);
+    if (minSplit == 0) return;
+    
+    // Calculate shares relative to minimum
+    for (final entry in splits) {
+      final memberId = entry.key;
+      final split = entry.value;
+      // Calculate the share ratio
+      final shareRatio = split / minSplit;
+      _memberShares[memberId] = double.parse(shareRatio.toStringAsFixed(2));
     }
   }
 
@@ -67,8 +171,66 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     super.dispose();
   }
 
+  double _parseAmountText(String value) {
+    final sanitized = value.replaceAll(',', '');
+    return double.tryParse(sanitized) ?? 0.0;
+  }
+
+  double _parseAmount() => _parseAmountText(_amountController.text);
+
+  String _formatAmount(String value) {
+    final cleaned = value.replaceAll(',', '');
+    if (cleaned.isEmpty) return '';
+
+    final parts = cleaned.split('.');
+    final integerPart = parts.first.replaceAll(RegExp(r'[^0-9]'), '');
+    final decimalsRaw = parts.length > 1 ? parts[1].replaceAll(RegExp(r'[^0-9]'), '') : '';
+
+    if (integerPart.isEmpty && decimalsRaw.isEmpty) return '';
+
+    final integerValue = int.tryParse(integerPart) ?? 0;
+    final formattedInt = _amountFormat.format(integerValue);
+    final decimals = decimalsRaw.isEmpty ? '' : '.${decimalsRaw.substring(0, min(2, decimalsRaw.length))}';
+
+    if (formattedInt == '0' && decimals.isEmpty) return '';
+
+    return '$formattedInt$decimals';
+  }
+
+  void _handleAmountChanged(String value) {
+    // Prevent manual editing when in custom split mode
+    if (_splitType == SplitType.custom) {
+      // Reset to previous value
+      _amountController.clear();
+      setState(() {});
+      return;
+    }
+
+    final formatted = _formatAmount(value);
+    if (formatted != value) {
+      _amountController.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+    setState(() {});
+  }
+
+  /// Calculate total from custom splits
+  double _calculateCustomSplitTotal() {
+    return _customSplits.values.fold<double>(0.0, (sum, val) => sum + val);
+  }
+
+  /// Update amount field based on custom splits
+  void _updateAmountFromCustomSplits() {
+    final total = _calculateCustomSplitTotal();
+    final formatted = total > 0 ? _formatAmount(total.toStringAsFixed(2)) : '';
+    _amountController.text = formatted;
+    setState(() {});
+  }
+
   Map<String, double> _calculateSplitMap() {
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
+    final amount = _parseAmount();
     final Map<String, double> splitMap = {};
 
     switch (_splitType) {
@@ -99,7 +261,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   }
 
   bool _validateSplit() {
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
+    final amount = _parseAmount();
     final splitMap = _calculateSplitMap();
     final totalSplit = splitMap.values.fold<double>(0.0, (sum, val) => sum + val);
 
@@ -118,7 +280,25 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     return true;
   }
 
+  String _splitTypeString() {
+    switch (_splitType) {
+      case SplitType.equal:
+        return 'equal';
+      case SplitType.family:
+        return 'family';
+      case SplitType.custom:
+        return 'custom';
+    }
+  }
+
+  Map<String, double>? _familySharesForPersistence() {
+    if (_splitType != SplitType.family) return null;
+    // Persist the exact shares entered for family split
+    return Map<String, double>.from(_memberShares);
+  }
+
   Future<void> _addExpense() async {
+    final amountValue = _parseAmount();
     if (!_formKey.currentState!.validate()) return;
     if (!_validateSplit()) return;
 
@@ -134,9 +314,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           groupId: widget.group.id,
           expenseId: widget.expenseToEdit!.id,
           description: _descriptionController.text.trim(),
-          amount: double.parse(_amountController.text),
+          amount: amountValue,
           paidBy: _paidBy!,
           splitMap: splitMap,
+          splitType: _splitTypeString(),
+          familyShares: _familySharesForPersistence(),
         );
         if (mounted) {
           Navigator.pop(context);
@@ -149,9 +331,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         await repository.createExpense(
           groupId: widget.group.id,
           description: _descriptionController.text.trim(),
-          amount: double.parse(_amountController.text),
+          amount: amountValue,
           paidBy: _paidBy!,
           splitMap: splitMap,
+          splitType: _splitTypeString(),
+          familyShares: _familySharesForPersistence(),
         );
         if (mounted) {
           Navigator.pop(context);
@@ -175,7 +359,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
+    final amount = _parseAmount();
     final membersAsync = ref.watch(memberProfilesProvider(widget.group.members));
 
     return Scaffold(
@@ -187,13 +371,116 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Amount (calculator display)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Amount',
+                  style: GoogleFonts.lato(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade700,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '₹',
+                        style: GoogleFonts.lato(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _amountController,
+                          textAlign: TextAlign.center,
+                          readOnly: _splitType == SplitType.custom,
+                          style: GoogleFonts.lato(
+                            fontSize: 48,
+                            fontWeight: FontWeight.w800,
+                            color: _splitType == SplitType.custom
+                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText: '0.00',
+                            hintStyle: GoogleFonts.lato(
+                              fontSize: 42,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                            ),
+                            contentPadding: EdgeInsets.zero,
+                            suffixIcon: _splitType == SplitType.custom
+                                ? Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Icon(
+                                      Icons.lock,
+                                      size: 20,
+                                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                          ],
+                          validator: (value) {
+                            final parsed = _parseAmountText(value ?? '');
+                            if (parsed <= 0) {
+                              return 'Please enter an amount';
+                            }
+                            return null;
+                          },
+                          onChanged: _handleAmountChanged,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
             // Description
+            Text(
+              'Description',
+              style: GoogleFonts.lato(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 6),
             TextFormField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description',
+              style: GoogleFonts.lato(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onBackground,
+              ),
+              decoration: InputDecoration(
                 hintText: 'e.g., Groceries, Electricity Bill',
-                prefixIcon: Icon(Icons.description),
+                hintStyle: GoogleFonts.lato(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey.shade500,
+                ),
+                prefixIcon: const Icon(Icons.description_outlined),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -202,80 +489,92 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-            // Amount
-            TextFormField(
-              controller: _amountController,
-              decoration: const InputDecoration(
-                labelText: 'Amount',
-                hintText: '0.00',
-                prefixIcon: Icon(Icons.currency_rupee),
+            // Paid By chips
+            Text(
+              'Paid By',
+              style: GoogleFonts.lato(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-              ],
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter an amount';
-                }
-                final amount = double.tryParse(value);
-                if (amount == null || amount <= 0) {
-                  return 'Please enter a valid amount';
-                }
-                return null;
-              },
-              onChanged: (value) => setState(() {}),
             ),
-            const SizedBox(height: 16),
-
-            // Paid By
+            const SizedBox(height: 8),
             membersAsync.when(
               data: (members) {
-                return DropdownButtonFormField<String>(
-                  value: _paidBy,
-                  decoration: const InputDecoration(
-                    labelText: 'Paid By',
-                    prefixIcon: Icon(Icons.person),
+                return SizedBox(
+                  height: 76,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemBuilder: (context, index) {
+                      final memberId = widget.group.members[index];
+                      final memberName = members[memberId]?.name ?? memberId;
+                      final isSelected = _paidBy == memberId;
+
+                      return ChoiceChip(
+                        label: Text(
+                          memberName,
+                          style: GoogleFonts.lato(
+                            fontWeight: FontWeight.w700,
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.grey.shade800,
+                          ),
+                        ),
+                        avatar: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                          child: Text(
+                            memberName[0].toUpperCase(),
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w800,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        selected: isSelected,
+                        onSelected: (_) => setState(() => _paidBy = memberId),
+                        selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                        backgroundColor: Colors.white,
+                        shape: StadiumBorder(
+                          side: BorderSide(
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        elevation: isSelected ? 3 : 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      );
+                    },
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemCount: widget.group.members.length,
                   ),
-                  items: widget.group.members.map((memberId) {
-                    final memberName = members.containsKey(memberId) 
-                        ? members[memberId]!.name 
-                        : memberId;
-                    return DropdownMenuItem(
-                      value: memberId,
-                      child: Text(memberName),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() => _paidBy = value);
-                  },
                 );
               },
               loading: () => const SizedBox(
-                height: 60,
-                child: Center(child: SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )),
-              ),
-              error: (_, __) => DropdownButtonFormField<String>(
-                value: _paidBy,
-                decoration: const InputDecoration(
-                  labelText: 'Paid By',
-                  prefixIcon: Icon(Icons.person),
+                height: 72,
+                child: Center(
+                  child: SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
-                items: widget.group.members.map((memberId) {
-                  return DropdownMenuItem(
-                    value: memberId,
-                    child: Text(memberId),
+              ),
+              error: (_, __) => Wrap(
+                spacing: 8,
+                children: widget.group.members.map((memberId) {
+                  return ChoiceChip(
+                    label: Text(
+                      memberId,
+                      style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+                    ),
+                    selected: _paidBy == memberId,
+                    onSelected: (_) => setState(() => _paidBy = memberId),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  setState(() => _paidBy = value);
-                },
               ),
             ),
             const SizedBox(height: 24),
@@ -313,6 +612,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                     for (final memberId in widget.group.members) {
                       _customSplits[memberId] = double.parse(perPerson.toStringAsFixed(2));
                     }
+                  }
+                  // When switching to custom, clear amount field to be filled by custom splits
+                  if (_splitType == SplitType.custom) {
+                    _amountController.clear();
                   }
                 });
               },
@@ -392,6 +695,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                         setState(() {
                                           _customSplits[memberId] = double.tryParse(value) ?? 0.0;
                                         });
+                                        // Auto-update main amount field
+                                        _updateAmountFromCustomSplits();
                                       },
                                     ),
                                   )
@@ -510,6 +815,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                         setState(() {
                                           _customSplits[memberId] = double.tryParse(value) ?? 0.0;
                                         });
+                                        // Auto-update main amount field
+                                        _updateAmountFromCustomSplits();
                                       },
                                     ),
                                   )

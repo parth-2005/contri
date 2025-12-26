@@ -10,6 +10,8 @@ class ExpenseModel {
   final double amount;
   final String paidBy;
   final Map<String, double> splitMap;
+  final String? splitType;
+  final Map<String, double>? familyShares;
   final DateTime date;
 
   ExpenseModel({
@@ -19,6 +21,8 @@ class ExpenseModel {
     required this.amount,
     required this.paidBy,
     required this.splitMap,
+    this.splitType,
+    this.familyShares,
     required this.date,
   });
 
@@ -31,6 +35,8 @@ class ExpenseModel {
       amount: amount,
       paidBy: paidBy,
       splitMap: splitMap,
+      splitType: splitType,
+      familyShares: familyShares,
       date: date,
     );
   }
@@ -44,6 +50,8 @@ class ExpenseModel {
       amount: expense.amount,
       paidBy: expense.paidBy,
       splitMap: expense.splitMap,
+      splitType: expense.splitType,
+      familyShares: expense.familyShares,
       date: expense.date,
     );
   }
@@ -56,6 +64,8 @@ class ExpenseModel {
       FirebaseConstants.expenseAmountField: amount,
       FirebaseConstants.expensePaidByField: paidBy,
       FirebaseConstants.expenseSplitMapField: splitMap,
+      if (splitType != null) FirebaseConstants.expenseSplitTypeField: splitType,
+      if (familyShares != null) FirebaseConstants.expenseFamilySharesField: familyShares,
       FirebaseConstants.expenseDateField: Timestamp.fromDate(date),
       FirebaseConstants.expenseCreatedAtField: FieldValue.serverTimestamp(),
     };
@@ -74,6 +84,13 @@ class ExpenseModel {
         (data[FirebaseConstants.expenseSplitMapField] as Map<String, dynamic>)
             .map((key, value) => MapEntry(key, (value as num).toDouble())),
       ),
+      splitType: data[FirebaseConstants.expenseSplitTypeField] as String?,
+      familyShares: data[FirebaseConstants.expenseFamilySharesField] != null
+          ? Map<String, double>.from(
+              (data[FirebaseConstants.expenseFamilySharesField] as Map<String, dynamic>)
+                  .map((key, value) => MapEntry(key, (value as num).toDouble())),
+            )
+          : null,
       date: (data[FirebaseConstants.expenseDateField] as Timestamp).toDate(),
     );
   }

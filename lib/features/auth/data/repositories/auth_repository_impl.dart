@@ -145,4 +145,27 @@ class AuthRepositoryImpl implements AuthRepository {
       return [];
     }
   }
+
+  // ⭐ NEW: Update user profile
+  @override
+  Future<void> updateUserProfile({
+    required String userId,
+    String? name,
+    String? phoneNumber,
+    String? photoUrl,
+  }) async {
+    try {
+      final updateData = <String, dynamic>{};
+      if (name != null) updateData[FirebaseConstants.userNameField] = name;
+      if (phoneNumber != null) updateData['phoneNumber'] = phoneNumber;
+      if (photoUrl != null) updateData[FirebaseConstants.userPhotoUrlField] = photoUrl;
+
+      await _firestore
+          .collection(FirebaseConstants.usersCollection)
+          .doc(userId)
+          .update(updateData);
+    } catch (e) {
+      throw Exception('Failed to update profile: $e');
+    }
+  }
 }

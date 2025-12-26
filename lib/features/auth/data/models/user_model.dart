@@ -8,6 +8,7 @@ class UserModel {
   final String name;
   final String email;
   final String? photoUrl;
+  final String? phoneNumber;
   final double totalOwed;
 
   UserModel({
@@ -15,6 +16,7 @@ class UserModel {
     required this.name,
     required this.email,
     this.photoUrl,
+    this.phoneNumber,
     this.totalOwed = 0.0,
   });
 
@@ -25,6 +27,7 @@ class UserModel {
       name: name,
       email: email,
       photoUrl: photoUrl,
+      phoneNumber: phoneNumber,
       totalOwed: totalOwed,
     );
   }
@@ -36,6 +39,7 @@ class UserModel {
       name: user.name,
       email: user.email,
       photoUrl: user.photoUrl,
+      phoneNumber: user.phoneNumber,
       totalOwed: user.totalOwed,
     );
   }
@@ -46,6 +50,7 @@ class UserModel {
       FirebaseConstants.userNameField: name,
       FirebaseConstants.userEmailField: email,
       FirebaseConstants.userPhotoUrlField: photoUrl,
+      'phoneNumber': phoneNumber,
       FirebaseConstants.userTotalOwedField: totalOwed,
     };
   }
@@ -58,6 +63,7 @@ class UserModel {
       name: data[FirebaseConstants.userNameField] as String,
       email: data[FirebaseConstants.userEmailField] as String,
       photoUrl: data[FirebaseConstants.userPhotoUrlField] as String?,
+      phoneNumber: data['phoneNumber'] as String?,
       totalOwed: (data[FirebaseConstants.userTotalOwedField] as num?)?.toDouble() ?? 0.0,
     );
   }

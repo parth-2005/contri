@@ -24,6 +24,8 @@ class FirebaseConstants {
   static const String expenseAmountField = 'amount';
   static const String expensePaidByField = 'paidBy';
   static const String expenseSplitMapField = 'splitMap';
+  static const String expenseSplitTypeField = 'splitType';
+  static const String expenseFamilySharesField = 'familyShares';
   static const String expenseDateField = 'date';
   static const String expenseCreatedAtField = 'createdAt';
 }

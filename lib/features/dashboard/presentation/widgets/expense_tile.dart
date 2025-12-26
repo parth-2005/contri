@@ -8,7 +8,7 @@ import '../../../../core/utils/currency_formatter.dart';
 
 /// Splitwise-style expense tile with expandable details
 /// Features:
-/// - Date box on the left (e.g., "OCT\n24")
+/// - Category icon on the left
 /// - Description + "Paid by [Name]" in the center
 /// - Color-coded status on the right (lent/owed/not involved)
 /// - Expandable to show full breakdown
@@ -41,6 +41,7 @@ class _ExpenseTileState extends State<ExpenseTile> {
     final payer = widget.members[widget.expense.paidBy];
     final payerName = payer?.name ?? widget.expense.paidBy;
     final (status, amount, color) = _getUserExpenseStatus();
+    final iconData = _iconForDescription();
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -65,36 +66,17 @@ class _ExpenseTileState extends State<ExpenseTile> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               child: Row(
                 children: [
-                  // Date Box (Left)
-                  SizedBox(
-                    width: 50,
-                    height: 50,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            DateFormat('MMM').format(widget.expense.date).toUpperCase(),
-                            style: GoogleFonts.lato(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          Text(
-                            DateFormat('dd').format(widget.expense.date),
-                            style: GoogleFonts.lato(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade900,
-                            ),
-                          ),
-                        ],
-                      ),
+                  // Category icon (Left)
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      iconData,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -305,6 +287,28 @@ class _ExpenseTileState extends State<ExpenseTile> {
         ],
       ),
     );
+  }
+
+  IconData _iconForDescription() {
+    final desc = widget.expense.description.toLowerCase();
+
+    if (desc.contains('food') || desc.contains('meal') || desc.contains('dinner')) {
+      return Icons.restaurant_menu;
+    }
+    if (desc.contains('rent') || desc.contains('home') || desc.contains('apartment')) {
+      return Icons.home_outlined;
+    }
+    if (desc.contains('travel') || desc.contains('flight') || desc.contains('trip')) {
+      return Icons.flight_takeoff;
+    }
+    if (desc.contains('cab') || desc.contains('ride') || desc.contains('fuel')) {
+      return Icons.directions_car;
+    }
+    if (desc.contains('shop') || desc.contains('grocery') || desc.contains('market')) {
+      return Icons.local_mall_outlined;
+    }
+
+    return Icons.receipt_long;
   }
 
   /// Determine user's expense status and color

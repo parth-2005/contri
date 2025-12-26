@@ -10,6 +10,8 @@ abstract class ExpenseRepository {
     required double amount,
     required String paidBy,
     required Map<String, double> splitMap,
+    String? splitType,
+    Map<String, double>? familyShares,
   });
 
   /// Update an existing expense and recalculate group balances atomically
@@ -20,6 +22,8 @@ abstract class ExpenseRepository {
     required double amount,
     required String paidBy,
     required Map<String, double> splitMap,
+    String? splitType,
+    Map<String, double>? familyShares,
   });
 
   /// Fetch expenses for a specific group

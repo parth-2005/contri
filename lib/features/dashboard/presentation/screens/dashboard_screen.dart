@@ -4,6 +4,8 @@ import '../providers/group_providers.dart';
 import '../widgets/group_card.dart';
 import 'create_group_screen.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../auth/presentation/screens/profile_screen.dart';
+import '../../../../core/presentation/widgets/shimmer_loading.dart';
 
 /// Dashboard Screen - Main screen showing list of groups
 class DashboardScreen extends ConsumerWidget {
@@ -28,6 +30,19 @@ class DashboardScreen extends ConsumerWidget {
                 subtitle: Text(user.email),
               ),
               const Divider(),
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit Profile'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProfileScreen(),
+                    ),
+                  );
+                },
+              ),
             ],
             ListTile(
               leading: const Icon(Icons.logout),
@@ -154,8 +169,10 @@ class DashboardScreen extends ConsumerWidget {
             },
           );
         },
-        loading: () => const Center(
-          child: CircularProgressIndicator(),
+        loading: () => ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: 4,
+          itemBuilder: (context, index) => const GroupCardShimmer(),
         ),
         error: (error, stack) {
           final isIndexError = error.toString().contains('FAILED_PRECONDITION') ||
@@ -206,30 +223,18 @@ class DashboardScreen extends ConsumerWidget {
       ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FloatingActionButton.extended(
-              heroTag: 'join_group',
-              onPressed: () => _showJoinGroupDialog(context, ref),
-              icon: const Icon(Icons.login),
-              label: const Text('Join Group'),
-            ),
-            const SizedBox(height: 12),
-            FloatingActionButton.extended(
-              heroTag: 'create_group',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const CreateGroupScreen(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('New Group'),
-            ),
-          ],
+        child: FloatingActionButton.extended(
+          heroTag: 'create_group',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const CreateGroupScreen(),
+              ),
+            );
+          },
+          icon: const Icon(Icons.add),
+          label: const Text('New Group'),
         ),
       ),
     );
