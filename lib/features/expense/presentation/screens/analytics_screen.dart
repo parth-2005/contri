@@ -158,23 +158,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Widget _buildCachedCalendarContent(BuildContext context, String userId) {
     // Get the key for the current focused month
     final monthKey = _getMonthKey(_focusedDay);
-    
-    // Check if month is cached
-    if (_monthCache.containsKey(monthKey)) {
-      final cachedExpenses = _monthCache[monthKey]!;
-      return _buildCalendarUI(context, cachedExpenses, userId);
-    }
-    
-    // Check if already loading
-    if (_loadingMonths.contains(monthKey)) {
-      return _buildCalendarUI(context, [], userId, isLoading: true);
-    }
-    
-    // Fetch the month data
-    _loadingMonths.add(monthKey);
+
+    // Always watch the stream so we can transition from loading → data → error
+    // even if a rebuild happens mid-load.
     final startDate = DateTime(_focusedDay.year, _focusedDay.month, 1);
     final endDate = DateTime(_focusedDay.year, _focusedDay.month + 1, 0, 23, 59, 59);
-    
+
     final monthFilterParams = FilterParams(
       startDate: startDate,
       endDate: endDate,
@@ -182,25 +171,43 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       memberId: userId,
       type: 'personal',
     );
-    
+
     final expensesAsync = ref.watch(filteredExpensesProvider(monthFilterParams));
-    
+    final cachedExpenses = _monthCache[monthKey];
+
     return expensesAsync.when(
       data: (expenses) {
         // Cache the result
         _monthCache[monthKey] = expenses;
         _loadingMonths.remove(monthKey);
-        
+
         // Prefetch next and previous months in background
         _prefetchAdjacentMonths(userId);
-        
+
         // Rebuild with cached data
         return _buildCalendarUI(context, expenses, userId);
       },
-      loading: () => _buildCalendarUI(context, [], userId, isLoading: true),
+      loading: () {
+        _loadingMonths.add(monthKey);
+        // Show cached data (if any) while loading new data
+        return _buildCalendarUI(
+          context,
+          cachedExpenses ?? const [],
+          userId,
+          isLoading: true,
+        );
+      },
       error: (error, stack) {
+        // Cache empty result so the UI can render gracefully instead of
+        // repeatedly re-fetching a missing month.
+        _monthCache[monthKey] = cachedExpenses ?? const [];
         _loadingMonths.remove(monthKey);
-        return _buildCalendarUI(context, [], userId, isError: true);
+        return _buildCalendarUI(
+          context,
+          cachedExpenses ?? const [],
+          userId,
+          isError: true,
+        );
       },
     );
   }
@@ -403,6 +410,28 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ),
 
         const SizedBox(height: 16),
+
+        if (isError)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Text(
+                'Couldn\'t load this month. Showing cached data if available.',
+                style: GoogleFonts.lato(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+            ),
+          ),
 
         // Day Details Header
         Padding(

@@ -41,7 +41,7 @@ class GroupDetailsScreen extends ConsumerWidget {
     final currentUser = ref.watch(authStateProvider).value;
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -51,37 +51,16 @@ class GroupDetailsScreen extends ConsumerWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          actions: [
-            PopupMenuButton<String>(
-              onSelected: (value) async {
-                switch (value) {
-                  case 'qr':
-                    _showQrCode(context);
-                    break;
-                  case 'share':
-                    _shareGroup(context);
-                    break;
-                  case 'info':
-                    _showGroupInfo(context, membersAsync, ref);
-                    break;
-                  case 'delete':
-                    await _confirmAndDeleteGroup(context, ref);
-                    break;
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'qr', child: Text('Show QR Code')),
-                PopupMenuItem(value: 'share', child: Text('Share')),
-                PopupMenuItem(value: 'info', child: Text('Group Info')),
-                PopupMenuItem(value: 'delete', child: Text('Delete Group')),
-              ],
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
+          bottom: TabBar(
+            indicatorColor: Colors.white,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorWeight: 3,
+            tabs: const [
               Tab(text: 'Expenses'),
               Tab(text: 'Balances'),
               Tab(text: 'Analytics'),
+              Tab(text: 'Members'),
             ],
           ),
         ),
@@ -141,6 +120,18 @@ class GroupDetailsScreen extends ConsumerWidget {
                 ),
               ),
             ),
+            membersAsync.when(
+              data: (members) => _buildMembersTab(effectiveGroup, members),
+              loading: () => const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              error: (error, _) => Center(
+                child: Text(
+                  'Failed to load members: $error',
+                  style: GoogleFonts.lato(),
+                ),
+              ),
+            ),
           ],
         ),
         floatingActionButton: FloatingActionButton(
@@ -161,139 +152,184 @@ class GroupDetailsScreen extends ConsumerWidget {
     AppUser? currentUser,
     List<Expense> expenses,
   ) {
+    final headerHeight = (MediaQuery.sizeOf(context).height * 0.3)
+        .clamp(220.0, 360.0);
+
     return CustomScrollView(
       slivers: [
-        SliverAppBar(
-          expandedHeight: 280,
-          pinned: true,
-          elevation: 0,
-          title: Text(
-            group.name,
-            style: GoogleFonts.lato(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          flexibleSpace: FlexibleSpaceBar(
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Theme.of(context).colorScheme.primary,
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                  ],
-                ),
+        SliverToBoxAdapter(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(top: 16, left: 16, right: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
+                ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.only(
-                  top: 60,
-                  left: 16,
-                  right: 16,
-                  bottom: 12,
-                ),
-                child: SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: Builder(
-                    builder: (ctx) {
-                      final balance = currentUser != null
-                          ? effectiveGroup.getBalanceForUser(currentUser.id)
-                          : 0.0;
-                      final isOwe = balance < 0;
-                      final displayText = isOwe ? 'You Owe' : 'You Lend';
-                      final displayColor = isOwe ? Colors.red : Colors.green;
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: headerHeight),
+              child: Builder(
+                builder: (ctx) {
+                  final balance = currentUser != null
+                      ? effectiveGroup.getBalanceForUser(currentUser.id)
+                      : 0.0;
+                  final isOwe = balance < 0;
+                  final displayText = isOwe ? 'You Owe' : 'You Lend';
+                  final displayColor = isOwe ? Colors.redAccent : Colors.lightGreenAccent;
 
-                      final personalExpense = _calculatePersonalExpense(
-                        expenses,
-                        currentUser?.id,
-                      );
+                  final personalExpense = _calculatePersonalExpense(
+                    expenses,
+                    currentUser?.id,
+                  );
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              displayText,
-                              style: GoogleFonts.lato(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              CurrencyFormatter.format(balance.abs()),
-                              style: GoogleFonts.lato(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                                color: displayColor,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              _getBalanceText(balance),
-                              style: GoogleFonts.lato(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'My Personal Expense',
-                              style: GoogleFonts.lato(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white.withValues(alpha: 0.7),
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              CurrencyFormatter.format(personalExpense),
-                              style: GoogleFonts.lato(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor:
-                                      Theme.of(context).colorScheme.primary,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                onPressed: () => _showSettlementPlan(
-                                  context,
-                                  ref,
-                                  currentUser?.id,
-                                ),
-                                child: Text(
-                                  'Settle Up',
-                                  style: GoogleFonts.lato(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        displayText,
+                        style: GoogleFonts.lato(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
-                      );
-                    },
-                  ),
-                ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        CurrencyFormatter.format(balance.abs()),
+                        style: GoogleFonts.lato(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          color: displayColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _getBalanceText(balance),
+                        style: GoogleFonts.lato(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'My Personal Expense',
+                        style: GoogleFonts.lato(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.75),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        CurrencyFormatter.format(personalExpense),
+                        style: GoogleFonts.lato(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 2,
+                          ),
+                          onPressed: () => _showSettlementPlan(
+                            context,
+                            ref,
+                            currentUser?.id,
+                          ),
+                          child: Text(
+                            'Settle Up',
+                            style: GoogleFonts.lato(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => _shareGroup(context),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.primary,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                elevation: 2,
+                              ),
+                              icon: const Icon(Icons.share_outlined),
+                              label: Text(
+                                'Share Group',
+                                style: GoogleFonts.lato(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => _confirmAndLeaveGroup(
+                                context,
+                                ref,
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.deepOrange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                elevation: 2,
+                              ),
+                              icon: const Icon(Icons.logout_rounded),
+                              label: Text(
+                                'Leave Group',
+                                style: GoogleFonts.lato(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -487,6 +523,77 @@ class GroupDetailsScreen extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
                 color: color,
               ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Members Tab
+  Widget _buildMembersTab(Group group, Map<String, AppUser> members) {
+    if (members.isEmpty) {
+      return const Center(child: Text('No members yet'));
+    }
+
+    final memberEntries = members.entries.toList()
+      ..sort((a, b) => a.value.name.compareTo(b.value.name));
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: memberEntries.length,
+      itemBuilder: (context, index) {
+        final entry = memberEntries[index];
+        final balance = group.getBalanceForUser(entry.key);
+        final isOwe = balance < 0;
+        final color = isOwe ? Colors.red : Colors.green;
+
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.grey.shade200),
+          ),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.1),
+              child: Text(
+                entry.value.name.isNotEmpty
+                    ? entry.value.name[0].toUpperCase()
+                    : '?',
+                style: GoogleFonts.lato(
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            title: Text(
+              entry.value.name,
+              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              entry.value.email,
+              style: GoogleFonts.lato(color: Colors.grey.shade600),
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  CurrencyFormatter.format(balance.abs()),
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  isOwe ? 'Owes' : 'Is owed',
+                  style: GoogleFonts.lato(fontSize: 11, color: color),
+                ),
+              ],
             ),
           ),
         );
@@ -1082,26 +1189,21 @@ class GroupDetailsScreen extends ConsumerWidget {
     return 'All settled up';
   }
 
-  /// Share group
+  /// Share group with QR preview and system share
   void _shareGroup(BuildContext context) {
     final deepLink = 'https://contri-568d7.web.app/join/${group.id}';
     final message =
         'Join my group "${group.name}" on Contri!\n\nUse this link: $deepLink';
-    Share.share(message);
-  }
-
-  void _showQrCode(BuildContext context) {
-    final deepLink = 'https://contri-568d7.web.app/join/${group.id}';
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: Text(
-          'Join via QR',
+          'Share Group',
           style: GoogleFonts.lato(fontWeight: FontWeight.w700),
         ),
         content: SizedBox(
-          width: 260,
+          width: 280,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1121,12 +1223,27 @@ class GroupDetailsScreen extends ConsumerWidget {
                 style: GoogleFonts.lato(fontSize: 12),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(dialogCtx);
+                    Share.share(message);
+                  },
+                  icon: const Icon(Icons.share_outlined),
+                  label: Text(
+                    'Share via apps (WhatsApp, etc.)',
+                    style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Close'),
           ),
         ],
@@ -1134,135 +1251,25 @@ class GroupDetailsScreen extends ConsumerWidget {
     );
   }
 
-  /// Show group info dialog
-  void _showGroupInfo(
-    BuildContext context,
-    AsyncValue<Map<String, AppUser>> membersAsync,
-    WidgetRef ref,
-  ) {
-    final effectiveGroup = ref.read(groupByIdProvider(group.id)).value ?? group;
-    showDialog(
-      context: context,
-      builder: (context) => membersAsync.when(
-        data: (members) => AlertDialog(
-          title: Text(
-            effectiveGroup.name,
-            style: GoogleFonts.lato(fontWeight: FontWeight.w700),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Group ID',
-                  style: GoogleFonts.lato(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  effectiveGroup.id,
-                  style: GoogleFonts.lato(fontSize: 13),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Members (${effectiveGroup.members.length})',
-                  style: GoogleFonts.lato(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...members.entries.map((entry) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          entry.value.name,
-                          style: GoogleFonts.lato(fontSize: 13),
-                        ),
-                        Text(
-                          CurrencyFormatter.formatWithSign(
-                            effectiveGroup.getBalanceForUser(entry.key),
-                          ),
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Close',
-                style: GoogleFonts.lato(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-        loading: () => AlertDialog(
-          title: Text(
-            effectiveGroup.name,
-            style: GoogleFonts.lato(fontWeight: FontWeight.w700),
-          ),
-          content: const CircularProgressIndicator(),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Close',
-                style: GoogleFonts.lato(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-        error: (error, stack) => AlertDialog(
-          title: Text(
-            effectiveGroup.name,
-            style: GoogleFonts.lato(fontWeight: FontWeight.w700),
-          ),
-          content: Text(
-            'Error loading members: $error',
-            style: GoogleFonts.lato(),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Close',
-                style: GoogleFonts.lato(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Confirm and delete the group
-  Future<void> _confirmAndDeleteGroup(
+  /// Confirm and leave the group
+  Future<void> _confirmAndLeaveGroup(
     BuildContext context,
     WidgetRef ref,
   ) async {
+    final currentUser = ref.read(authStateProvider).value;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not authenticated')),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Group'),
+        title: const Text('Leave Group'),
         content: const Text(
-          'Deleting the group will remove all its expenses. This action cannot be undone.',
+          'You will be removed from this group and future updates. Continue?',
         ),
         actions: [
           TextButton(
@@ -1271,7 +1278,7 @@ class GroupDetailsScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: const Text('Leave Group'),
           ),
         ],
       ),
@@ -1281,18 +1288,18 @@ class GroupDetailsScreen extends ConsumerWidget {
 
     try {
       final repository = ref.read(groupRepositoryProvider);
-      await repository.deleteGroup(group.id);
+      await repository.removeMemberFromGroup(group.id, currentUser.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Group deleted')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You left the group')),
+        );
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to delete group: $e')));
+        ).showSnackBar(SnackBar(content: Text('Failed to leave group: $e')));
       }
     }
   }
