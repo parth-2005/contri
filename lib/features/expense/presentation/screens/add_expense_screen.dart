@@ -8,22 +8,21 @@ import 'package:intl/intl.dart';
 import '../providers/expense_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/providers/member_provider.dart';
+import '../../../dashboard/presentation/providers/group_providers.dart';
 import '../../../dashboard/domain/entities/group.dart';
 import '../../domain/entities/expense.dart';
 import '../../../../core/utils/currency_formatter.dart';
 
 enum SplitType { equal, custom, family }
 
-/// Screen to add/edit an expense with split calculator
+/// Unified screen to add/edit any expense (personal, family, or group)
+/// - For personal/family: group is null, simple form without split calculator
+/// - For group: group is provided, full split calculator UI
 class AddExpenseScreen extends ConsumerStatefulWidget {
-  final Group group;
+  final Group? group; // Optional: null for personal/family expenses
   final Expense? expenseToEdit;
 
-  const AddExpenseScreen({
-    super.key,
-    required this.group,
-    this.expenseToEdit,
-  });
+  const AddExpenseScreen({super.key, this.group, this.expenseToEdit});
 
   @override
   ConsumerState<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -33,127 +32,176 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
-  
+
   final NumberFormat _amountFormat = NumberFormat.decimalPattern('en_IN');
   String? _paidBy;
+  DateTime _selectedDate = DateTime.now();
   SplitType _splitType = SplitType.equal;
   final Map<String, double> _customSplits = {};
-  final Map<String, double> _memberShares = {}; // {userId: shareCount} for family split (e.g., 0.5 for child, 1 for adult)
+  final Map<String, double> _memberShares =
+      {}; // {userId: shareCount} for family split
   bool _isLoading = false;
+
+  // Personal/Family expense fields
+  String _expenseType = 'personal'; // 'personal', 'family', 'group'
+  String _selectedCategory = 'Other';
+  String? _selectedGroupId;
+  String? _selectedMemberId; // For family expenses
+
+  // Predefined categories
+  static const List<Map<String, dynamic>> _categories = [
+    {'name': 'Grocery', 'icon': Icons.shopping_cart},
+    {'name': 'Fuel', 'icon': Icons.local_gas_station},
+    {'name': 'EMI', 'icon': Icons.account_balance},
+    {'name': 'School', 'icon': Icons.school},
+    {'name': 'Shopping', 'icon': Icons.shopping_bag},
+    {'name': 'Dine-out', 'icon': Icons.restaurant},
+    {'name': 'Healthcare', 'icon': Icons.medical_services},
+    {'name': 'Entertainment', 'icon': Icons.movie},
+    {'name': 'Travel', 'icon': Icons.flight},
+    {'name': 'Utilities', 'icon': Icons.bolt},
+    {'name': 'Other', 'icon': Icons.more_horiz},
+  ];
+
+  bool get _isPersonalOrFamily => widget.group == null;
+  bool get _isGroupExpense => widget.group != null;
 
   @override
   void initState() {
     super.initState();
     final authState = ref.read(authStateProvider);
     final currentUser = authState.value;
-    
-    // Initialize custom splits and member shares
-    for (final memberId in widget.group.members) {
-      _customSplits[memberId] = 0.0;
-      // Use defaultShares if available, otherwise default to 1
-      _memberShares[memberId] = widget.group.defaultShares[memberId] ?? 1;
+
+    // Initialize for group expenses
+    if (widget.group != null) {
+      for (final memberId in widget.group!.members) {
+        _customSplits[memberId] = 0.0;
+        _memberShares[memberId] = widget.group!.defaultShares[memberId] ?? 1;
+      }
     }
 
     // If editing, populate fields with existing expense data
     if (widget.expenseToEdit != null) {
-      _descriptionController.text = widget.expenseToEdit!.description;
-      _amountController.text = _formatAmount(widget.expenseToEdit!.amount.toStringAsFixed(2));
-      _paidBy = widget.expenseToEdit!.paidBy;
-      _customSplits.addAll(widget.expenseToEdit!.split);
-      
-      // Prefer stored splitType/familyShares when available
-      if (widget.expenseToEdit!.splitType != null) {
-        switch (widget.expenseToEdit!.splitType) {
-          case 'equal':
-            _splitType = SplitType.equal;
-            break;
-          case 'family':
-            _splitType = SplitType.family;
-            break;
-          case 'custom':
-          default:
-            _splitType = SplitType.custom;
-            break;
-        }
-      } else {
-        // Fallback: detect split type
-        _splitType = _detectSplitType(widget.expenseToEdit!);
-      }
+      final expense = widget.expenseToEdit!;
+      _expenseType = expense.type;
+      _selectedCategory = expense.category;
+      _selectedGroupId = expense.groupId;
+      _selectedMemberId = expense.attributedMemberId;
+      _descriptionController.text = expense.description;
+      _amountController.text = _formatAmount(expense.amount.toStringAsFixed(2));
+      _paidBy = expense.paidBy;
+      _selectedDate = expense.date;
 
-      // Populate member shares if stored, else reverse-engineer
-      if (_splitType == SplitType.family) {
-        if (widget.expenseToEdit!.familyShares != null && widget.expenseToEdit!.familyShares!.isNotEmpty) {
-          _memberShares
-            ..clear()
-            ..addAll(widget.expenseToEdit!.familyShares!);
+      // Only handle split details for group expenses
+      if (_isGroupExpense) {
+        _customSplits.addAll(expense.split);
+
+        // Prefer stored splitType/familyShares when available
+        if (widget.expenseToEdit!.splitType != null) {
+          switch (widget.expenseToEdit!.splitType) {
+            case 'equal':
+              _splitType = SplitType.equal;
+              break;
+            case 'family':
+              _splitType = SplitType.family;
+              break;
+            case 'custom':
+            default:
+              _splitType = SplitType.custom;
+              break;
+          }
         } else {
-          _calculateMemberSharesFromSplitMap(
-            widget.expenseToEdit!.amount,
-            widget.expenseToEdit!.split,
-          );
+          // Fallback: detect split type
+          _splitType = _detectSplitType(widget.expenseToEdit!);
+        }
+
+        // Populate member shares if stored, else reverse-engineer
+        if (_splitType == SplitType.family) {
+          if (widget.expenseToEdit!.familyShares != null &&
+              widget.expenseToEdit!.familyShares!.isNotEmpty) {
+            _memberShares
+              ..clear()
+              ..addAll(widget.expenseToEdit!.familyShares!);
+          } else {
+            _calculateMemberSharesFromSplitMap(
+              widget.expenseToEdit!.amount,
+              widget.expenseToEdit!.split,
+            );
+          }
         }
       }
     } else {
-      _paidBy = currentUser?.id ?? widget.group.members.first;
+      _paidBy =
+          currentUser?.id ?? (widget.group?.members.first ?? currentUser?.id);
+      _expenseType = widget.group != null ? 'group' : 'personal';
     }
   }
 
   /// Detect which split type was used for an expense
   SplitType _detectSplitType(Expense expense) {
+    if (widget.group == null)
+      return SplitType.equal; // Fallback for personal expenses
+
     final amount = expense.amount;
     final splitMap = expense.split;
-    
+
     // Check if it's an equal split
-    final memberCount = widget.group.members.length;
+    final memberCount = widget.group!.members.length;
     final equalAmount = amount / memberCount;
     final isEqual = splitMap.values.every(
       (split) => (split - equalAmount).abs() < 0.01,
     );
     if (isEqual) return SplitType.equal;
-    
+
     // Check if it's a family split (proportional to default shares)
-    final totalDefaultShares = widget.group.defaultShares.values.fold<double>(
+    final totalDefaultShares = widget.group!.defaultShares.values.fold<double>(
       0.0,
       (sum, share) => sum + share,
     );
-    
+
     if (totalDefaultShares > 0) {
       final isFamilySplit = splitMap.entries.every((entry) {
         final memberId = entry.key;
         final actualSplit = entry.value;
-        final defaultShare = widget.group.defaultShares[memberId] ?? 1.0;
+        final defaultShare = widget.group!.defaultShares[memberId] ?? 1.0;
         final expectedSplit = (amount * defaultShare) / totalDefaultShares;
         return (actualSplit - expectedSplit).abs() < 0.01;
       });
-      
+
       if (isFamilySplit) return SplitType.family;
     }
-    
+
     // Otherwise, it's custom
     return SplitType.custom;
   }
 
   /// Calculate member shares from split map (for family split editing)
-  void _calculateMemberSharesFromSplitMap(double amount, Map<String, double> splitMap) {
+  void _calculateMemberSharesFromSplitMap(
+    double amount,
+    Map<String, double> splitMap,
+  ) {
     if (amount == 0) return;
-    
+
     // Find the total of all splits
-    final totalSplit = splitMap.values.fold<double>(0.0, (sum, val) => sum + val);
+    final totalSplit = splitMap.values.fold<double>(
+      0.0,
+      (sum, val) => sum + val,
+    );
     if (totalSplit == 0) return;
-    
+
     // Calculate what share each member must have had
     // Formula: share = (split / amount) * totalShares
     // We need to find totalShares first
     // Let's use the first member as reference: share1 = (split1 / amount) * totalShares
     // We can normalize assuming the smallest split represents 0.5 or 1 share
-    
+
     final splits = splitMap.entries.toList();
     if (splits.isEmpty) return;
-    
+
     // Find minimum split (this will be our base unit)
     final minSplit = splits.map((e) => e.value).reduce((a, b) => a < b ? a : b);
     if (minSplit == 0) return;
-    
+
     // Calculate shares relative to minimum
     for (final entry in splits) {
       final memberId = entry.key;
@@ -184,13 +232,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
     final parts = cleaned.split('.');
     final integerPart = parts.first.replaceAll(RegExp(r'[^0-9]'), '');
-    final decimalsRaw = parts.length > 1 ? parts[1].replaceAll(RegExp(r'[^0-9]'), '') : '';
+    final decimalsRaw = parts.length > 1
+        ? parts[1].replaceAll(RegExp(r'[^0-9]'), '')
+        : '';
 
     if (integerPart.isEmpty && decimalsRaw.isEmpty) return '';
 
     final integerValue = int.tryParse(integerPart) ?? 0;
     final formattedInt = _amountFormat.format(integerValue);
-    final decimals = decimalsRaw.isEmpty ? '' : '.${decimalsRaw.substring(0, min(2, decimalsRaw.length))}';
+    final decimals = decimalsRaw.isEmpty
+        ? ''
+        : '.${decimalsRaw.substring(0, min(2, decimalsRaw.length))}';
 
     if (formattedInt == '0' && decimals.isEmpty) return '';
 
@@ -230,13 +282,16 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   }
 
   Map<String, double> _calculateSplitMap() {
+    if (widget.group == null)
+      return {}; // Should not be called for personal expenses
+
     final amount = _parseAmount();
     final Map<String, double> splitMap = {};
 
     switch (_splitType) {
       case SplitType.equal:
-        final perPerson = amount / widget.group.members.length;
-        for (final memberId in widget.group.members) {
+        final perPerson = amount / widget.group!.members.length;
+        for (final memberId in widget.group!.members) {
           splitMap[memberId] = double.parse(perPerson.toStringAsFixed(2));
         }
         break;
@@ -247,11 +302,16 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
       case SplitType.family:
         // Split based on family shares (defaultShares) - supports decimals (0.5 for child, 1 for adult)
-        final totalShares = _memberShares.values.fold<double>(0.0, (sum, val) => sum + val);
+        final totalShares = _memberShares.values.fold<double>(
+          0.0,
+          (sum, val) => sum + val,
+        );
         if (totalShares > 0) {
-          for (final memberId in widget.group.members) {
+          for (final memberId in widget.group!.members) {
             final shareCount = _memberShares[memberId] ?? 1.0;
-            splitMap[memberId] = double.parse(((amount * shareCount) / totalShares).toStringAsFixed(2));
+            splitMap[memberId] = double.parse(
+              ((amount * shareCount) / totalShares).toStringAsFixed(2),
+            );
           }
         }
         break;
@@ -263,7 +323,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   bool _validateSplit() {
     final amount = _parseAmount();
     final splitMap = _calculateSplitMap();
-    final totalSplit = splitMap.values.fold<double>(0.0, (sum, val) => sum + val);
+    final totalSplit = splitMap.values.fold<double>(
+      0.0,
+      (sum, val) => sum + val,
+    );
 
     if ((totalSplit - amount).abs() > 0.01) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -300,27 +363,46 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   Future<void> _addExpense() async {
     final amountValue = _parseAmount();
     if (!_formKey.currentState!.validate()) return;
-    if (!_validateSplit()) return;
+
+    // Only validate split for group expenses
+    if (_isGroupExpense && !_validateSplit()) return;
 
     setState(() => _isLoading = true);
 
     try {
       final repository = ref.read(expenseRepositoryProvider);
-      final splitMap = _calculateSplitMap();
+      final authState = ref.read(authStateProvider);
+      final currentUser = authState.value;
+
+      // For personal/family expenses: simple split (user pays and owes themselves)
+      // For group expenses: use calculated split map
+      final splitMap = _isPersonalOrFamily
+          ? {currentUser!.id: amountValue}
+          : _calculateSplitMap();
+
+      // For personal/family: groupId is selected or null
+      // For group expenses: use widget.group.id
+      final groupId = _isPersonalOrFamily
+          ? (_expenseType == 'group' ? _selectedGroupId : null)
+          : widget.group!.id;
+
+      final paidById = _isPersonalOrFamily ? currentUser!.id : _paidBy!;
 
       if (widget.expenseToEdit != null) {
         // Update existing expense
         await repository.updateExpense(
-          groupId: widget.group.id,
+          groupId: groupId,
           expenseId: widget.expenseToEdit!.id,
           description: _descriptionController.text.trim(),
           amount: amountValue,
-          paidBy: _paidBy!,
+          paidBy: paidById,
           split: splitMap,
-          splitType: _splitTypeString(),
-          familyShares: _familySharesForPersistence(),
-          category: widget.expenseToEdit!.category,
-          type: widget.expenseToEdit!.type,
+          splitType: _isGroupExpense ? _splitTypeString() : null,
+          familyShares: _isGroupExpense ? _familySharesForPersistence() : null,
+          category: _selectedCategory,
+          type: _expenseType,
+          attributedMemberId: _selectedMemberId,
+          date: _selectedDate,
         );
         if (mounted) {
           Navigator.pop(context);
@@ -331,15 +413,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       } else {
         // Create new expense
         await repository.createExpense(
-          groupId: widget.group.id,
+          groupId: groupId,
           description: _descriptionController.text.trim(),
           amount: amountValue,
-          paidBy: _paidBy!,
+          paidBy: paidById,
           split: splitMap,
-          splitType: _splitTypeString(),
-          familyShares: _familySharesForPersistence(),
-          category: 'Other',
-          type: 'group',
+          splitType: _isGroupExpense ? _splitTypeString() : null,
+          familyShares: _isGroupExpense ? _familySharesForPersistence() : null,
+          category: _selectedCategory,
+          type: _expenseType,
+          attributedMemberId: _selectedMemberId,
+          date: _selectedDate,
         );
         if (mounted) {
           Navigator.pop(context);
@@ -350,9 +434,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) {
@@ -364,17 +448,59 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     final amount = _parseAmount();
-    final membersAsync = ref.watch(memberProfilesProvider(widget.group.members));
+    final membersAsync = _isGroupExpense
+        ? ref.watch(memberProfilesProvider(widget.group!.members))
+        : null;
+    final groupsAsync = _isPersonalOrFamily
+        ? ref.watch(userGroupsProvider)
+        : null;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.expenseToEdit != null ? 'Edit Expense' : 'Add Expense'),
+        title: Text(
+          widget.expenseToEdit != null ? 'Edit Expense' : 'Add Expense',
+        ),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Expense Type Selector (only for personal/family mode)
+            if (_isPersonalOrFamily) ...[
+              const Text(
+                'Expense Type',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'personal',
+                    label: Text('Personal'),
+                    icon: Icon(Icons.person),
+                  ),
+                  ButtonSegment(
+                    value: 'family',
+                    label: Text('Family'),
+                    icon: Icon(Icons.family_restroom),
+                  ),
+                  ButtonSegment(
+                    value: 'group',
+                    label: Text('Group'),
+                    icon: Icon(Icons.group),
+                  ),
+                ],
+                selected: {_expenseType},
+                onSelectionChanged: (Set<String> newSelection) {
+                  setState(() {
+                    _expenseType = newSelection.first;
+                  });
+                },
+              ),
+              const SizedBox(height: 24),
+            ],
+
             // Amount (calculator display)
             Column(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -390,9 +516,14 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 12,
+                  ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.35),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.secondary.withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Row(
@@ -416,7 +547,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                             fontSize: 48,
                             fontWeight: FontWeight.w800,
                             color: _splitType == SplitType.custom
-                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.5)
                                 : Theme.of(context).colorScheme.primary,
                           ),
                           decoration: InputDecoration(
@@ -425,7 +558,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                             hintStyle: GoogleFonts.lato(
                               fontSize: 42,
                               fontWeight: FontWeight.w700,
-                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.3),
                             ),
                             contentPadding: EdgeInsets.zero,
                             suffixIcon: _splitType == SplitType.custom
@@ -434,14 +569,21 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                                     child: Icon(
                                       Icons.lock,
                                       size: 20,
-                                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withValues(alpha: 0.5),
                                     ),
                                   )
                                 : null,
                           ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                           inputFormatters: [
-                            FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,]'),
+                            ),
                           ],
                           validator: (value) {
                             final parsed = _parseAmountText(value ?? '');
@@ -495,386 +637,628 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Paid By chips
+            // Category Selector (for personal/family expenses)
+            if (_isPersonalOrFamily) ...[
+              const Text(
+                'Category',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 200,
+                child: GridView.builder(
+                  scrollDirection: Axis.horizontal,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1,
+                  ),
+                  itemCount: _categories.length,
+                  itemBuilder: (context, index) {
+                    final category = _categories[index];
+                    final isSelected = _selectedCategory == category['name'];
+                    return GestureDetector(
+                      onTap: () => setState(
+                        () => _selectedCategory = category['name'] as String,
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.secondary,
+                          borderRadius: BorderRadius.circular(12),
+                          border: isSelected
+                              ? Border.all(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                )
+                              : null,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              category['icon'] as IconData,
+                              color: isSelected
+                                  ? Colors.white
+                                  : Theme.of(context).colorScheme.onSecondary,
+                              size: 24,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              category['name'] as String,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isSelected
+                                    ? Colors.white
+                                    : Theme.of(context).colorScheme.onSecondary,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Group Selector (for personal mode when type is 'group')
+            if (_isPersonalOrFamily && _expenseType == 'group') ...[
+              if (groupsAsync != null)
+                groupsAsync.when(
+                  data: (groups) {
+                    if (groups.isEmpty) {
+                      return const Text(
+                        'No groups available. Create a group first.',
+                        style: TextStyle(color: Colors.orange),
+                      );
+                    }
+                    return DropdownButtonFormField<String>(
+                      value: _selectedGroupId,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Group',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.group),
+                      ),
+                      items: groups
+                          .map(
+                            (group) => DropdownMenuItem(
+                              value: group.id,
+                              child: Text(group.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _selectedGroupId = value),
+                      validator: (value) =>
+                          value == null ? 'Please select a group' : null,
+                    );
+                  },
+                  loading: () => const CircularProgressIndicator(),
+                  error: (error, _) => Text('Error: $error'),
+                ),
+              const SizedBox(height: 20),
+            ],
+
+            // Member Selector (for family expenses in personal mode)
+            if (_isPersonalOrFamily && _expenseType == 'family') ...[
+              const Text(
+                'Attributed To (Optional)',
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                initialValue: _selectedMemberId,
+                decoration: const InputDecoration(
+                  labelText: 'Member Name',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_outline),
+                  hintText: 'e.g., Dad, Mom, Child 1',
+                ),
+                onChanged: (value) => _selectedMemberId = value.trim(),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Date selector
             Text(
-              'Paid By',
+              'Expense Date',
               style: GoogleFonts.lato(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade700,
               ),
             ),
-            const SizedBox(height: 8),
-            membersAsync.when(
-              data: (members) {
-                return SizedBox(
-                  height: 76,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemBuilder: (context, index) {
-                      final memberId = widget.group.members[index];
-                      final memberName = members[memberId]?.name ?? memberId;
-                      final isSelected = _paidBy == memberId;
+            const SizedBox(height: 6),
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _selectedDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now(),
+                );
+                if (picked != null) {
+                  setState(() => _selectedDate = picked);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade400),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      DateFormat('MMM dd, yyyy').format(_selectedDate),
+                      style: GoogleFonts.lato(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
 
+            // Paid By chips (only for group expenses)
+            if (_isGroupExpense) ...[
+              Text(
+                'Paid By',
+                style: GoogleFonts.lato(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (membersAsync != null)
+                membersAsync.when(
+                  data: (members) {
+                    return SizedBox(
+                      height: 76,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemBuilder: (context, index) {
+                          final memberId = widget.group!.members[index];
+                          final memberName =
+                              members[memberId]?.name ?? memberId;
+                          final isSelected = _paidBy == memberId;
+
+                          return ChoiceChip(
+                            label: Text(
+                              memberName,
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.grey.shade800,
+                              ),
+                            ),
+                            avatar: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.12),
+                              child: Text(
+                                memberName[0].toUpperCase(),
+                                style: GoogleFonts.lato(
+                                  fontWeight: FontWeight.w800,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                            selected: isSelected,
+                            onSelected: (_) =>
+                                setState(() => _paidBy = memberId),
+                            selectedColor: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.12),
+                            backgroundColor: Colors.white,
+                            shape: StadiumBorder(
+                              side: BorderSide(
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.grey.shade300,
+                              ),
+                            ),
+                            elevation: isSelected ? 3 : 0,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                          );
+                        },
+                        separatorBuilder: (_, idx) => const SizedBox(width: 10),
+                        itemCount: widget.group!.members.length,
+                      ),
+                    );
+                  },
+                  loading: () => const SizedBox(
+                    height: 72,
+                    child: Center(
+                      child: SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  error: (_, err) => Wrap(
+                    spacing: 8,
+                    children: widget.group!.members.map((memberId) {
                       return ChoiceChip(
                         label: Text(
-                          memberName,
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w700,
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.grey.shade800,
-                          ),
+                          memberId,
+                          style: GoogleFonts.lato(fontWeight: FontWeight.w600),
                         ),
-                        avatar: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                          child: Text(
-                            memberName[0].toUpperCase(),
-                            style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w800,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                        selected: isSelected,
+                        selected: _paidBy == memberId,
                         onSelected: (_) => setState(() => _paidBy = memberId),
-                        selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                        backgroundColor: Colors.white,
-                        shape: StadiumBorder(
-                          side: BorderSide(
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.grey.shade300,
-                          ),
-                        ),
-                        elevation: isSelected ? 3 : 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       );
-                    },
-                    separatorBuilder: (_, idx) => const SizedBox(width: 10),
-                    itemCount: widget.group.members.length,
-                  ),
-                );
-              },
-              loading: () => const SizedBox(
-                height: 72,
-                child: Center(
-                  child: SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    }).toList(),
                   ),
                 ),
-              ),
-              error: (_, err) => Wrap(
-                spacing: 8,
-                children: widget.group.members.map((memberId) {
-                  return ChoiceChip(
-                    label: Text(
-                      memberId,
-                      style: GoogleFonts.lato(fontWeight: FontWeight.w600),
-                    ),
-                    selected: _paidBy == memberId,
-                    onSelected: (_) => setState(() => _paidBy = memberId),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
+            ],
 
-            // Split Type Selector
-            Text(
-              'Split Type',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            SegmentedButton<SplitType>(
-              segments: const [
-                ButtonSegment(
-                  value: SplitType.equal,
-                  label: Text('Equal'),
-                  icon: Icon(Icons.people),
-                ),
-                ButtonSegment(
-                  value: SplitType.family,
-                  label: Text('Family'),
-                  icon: Icon(Icons.family_restroom),
-                ),
-                ButtonSegment(
-                  value: SplitType.custom,
-                  label: Text('Custom'),
-                  icon: Icon(Icons.edit),
-                ),
-              ],
-              selected: {_splitType},
-              onSelectionChanged: (Set<SplitType> newSelection) {
-                setState(() {
-                  _splitType = newSelection.first;
-                  if (_splitType == SplitType.equal && amount > 0) {
-                    final perPerson = amount / widget.group.members.length;
-                    for (final memberId in widget.group.members) {
-                      _customSplits[memberId] = double.parse(perPerson.toStringAsFixed(2));
+            // Split Type Selector (only for group expenses)
+            if (_isGroupExpense) ...[
+              Text(
+                'Split Type',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<SplitType>(
+                segments: const [
+                  ButtonSegment(
+                    value: SplitType.equal,
+                    label: Text('Equal'),
+                    icon: Icon(Icons.people),
+                  ),
+                  ButtonSegment(
+                    value: SplitType.family,
+                    label: Text('Family'),
+                    icon: Icon(Icons.family_restroom),
+                  ),
+                  ButtonSegment(
+                    value: SplitType.custom,
+                    label: Text('Custom'),
+                    icon: Icon(Icons.edit),
+                  ),
+                ],
+                selected: {_splitType},
+                onSelectionChanged: (Set<SplitType> newSelection) {
+                  setState(() {
+                    _splitType = newSelection.first;
+                    if (_splitType == SplitType.equal && amount > 0) {
+                      final perPerson = amount / widget.group!.members.length;
+                      for (final memberId in widget.group!.members) {
+                        _customSplits[memberId] = double.parse(
+                          perPerson.toStringAsFixed(2),
+                        );
+                      }
                     }
-                  }
-                  // When switching to custom, clear amount field to be filled by custom splits
-                  if (_splitType == SplitType.custom) {
-                    _amountController.clear();
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 16),
+                    // When switching to custom, clear amount field to be filled by custom splits
+                    if (_splitType == SplitType.custom) {
+                      _amountController.clear();
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
 
-            // Split Details Card
-            membersAsync.when(
-              data: (members) {
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Split Details Card
+              if (membersAsync != null)
+                membersAsync.when(
+                  data: (members) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Split Details',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            if (amount > 0)
-                              Text(
-                                'Total: ${CurrencyFormatter.format(amount)}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                          ],
-                        ),
-                        const Divider(),
-                        ...widget.group.members.map((memberId) {
-                          final split = _splitType == SplitType.equal
-                              ? amount / widget.group.members.length
-                              : _splitType == SplitType.family
-                                  ? _calculateSplitMap()[memberId] ?? 0.0
-                                  : _customSplits[memberId] ?? 0.0;
-                          final memberName = members.containsKey(memberId)
-                              ? members[memberId]!.name
-                              : memberId;
-
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Row(
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                CircleAvatar(
-                                  radius: 16,
-                                  child: Text(memberName[0].toUpperCase()),
+                                Text(
+                                  'Split Details',
+                                  style: Theme.of(context).textTheme.titleSmall,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(memberName),
-                                      if (_splitType == SplitType.family)
-                                        Text(
-                                          'Share: ${(_memberShares[memberId] ?? 1.0).toStringAsFixed(1)}',
-                                          style: Theme.of(context).textTheme.bodySmall,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                if (_splitType == SplitType.custom)
-                                  SizedBox(
-                                    width: 100,
-                                    child: TextFormField(
-                                      initialValue: split.toStringAsFixed(2),
-                                      decoration: const InputDecoration(
-                                        prefixText: '₹',
-                                        isDense: true,
-                                      ),
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                                      ],
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _customSplits[memberId] = double.tryParse(value) ?? 0.0;
-                                        });
-                                        // Auto-update main amount field
-                                        _updateAmountFromCustomSplits();
-                                      },
-                                    ),
-                                  )
-                                else if (_splitType == SplitType.family)
-                                  SizedBox(
-                                    width: 90,
-                                    child: TextFormField(
-                                      initialValue: (_memberShares[memberId] ?? 1.0).toString(),
-                                      decoration: const InputDecoration(
-                                        labelText: 'Share',
-                                        isDense: true,
-                                        hintText: '1 or 0.5',
-                                      ),
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                                      ],
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _memberShares[memberId] = double.tryParse(value) ?? 1.0;
-                                        });
-                                      },
-                                    ),
-                                  )
-                                else
+                                if (amount > 0)
                                   Text(
-                                    CurrencyFormatter.format(split),
-                                    style: Theme.of(context).textTheme.titleSmall,
+                                    'Total: ${CurrencyFormatter.format(amount)}',
+                                    style: Theme.of(context).textTheme.bodySmall,
                                   ),
                               ],
                             ),
-                          );
-                        }),
-                      ],
+                            const Divider(),
+                            ...widget.group!.members.map((memberId) {
+                              final split = _splitType == SplitType.equal
+                                  ? amount / widget.group!.members.length
+                                  : _splitType == SplitType.family
+                                  ? _calculateSplitMap()[memberId] ?? 0.0
+                                  : _customSplits[memberId] ?? 0.0;
+                              final memberName = members.containsKey(memberId)
+                                  ? members[memberId]!.name
+                                  : memberId;
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 16,
+                                    child: Text(memberName[0].toUpperCase()),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(memberName),
+                                        if (_splitType == SplitType.family)
+                                          Text(
+                                            'Share: ${(_memberShares[memberId] ?? 1.0).toStringAsFixed(1)}',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_splitType == SplitType.custom)
+                                    SizedBox(
+                                      width: 100,
+                                      child: TextFormField(
+                                        initialValue: split.toStringAsFixed(2),
+                                        decoration: const InputDecoration(
+                                          prefixText: '₹',
+                                          isDense: true,
+                                        ),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                            RegExp(r'^\d+\.?\d{0,2}'),
+                                          ),
+                                        ],
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _customSplits[memberId] =
+                                                double.tryParse(value) ?? 0.0;
+                                          });
+                                          // Auto-update main amount field
+                                          _updateAmountFromCustomSplits();
+                                        },
+                                      ),
+                                    )
+                                  else if (_splitType == SplitType.family)
+                                    SizedBox(
+                                      width: 90,
+                                      child: TextFormField(
+                                        initialValue:
+                                            (_memberShares[memberId] ?? 1.0)
+                                                .toString(),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Share',
+                                          isDense: true,
+                                          hintText: '1 or 0.5',
+                                        ),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                            RegExp(r'^\d+\.?\d{0,2}'),
+                                          ),
+                                        ],
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _memberShares[memberId] =
+                                                double.tryParse(value) ?? 1.0;
+                                          });
+                                        },
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      CurrencyFormatter.format(split),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
+                                    ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-              loading: () => const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(
-                    child: SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  );
+                },
+                loading: () => const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(
+                      child: SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              error: (_, err) {
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Split Details',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            if (amount > 0)
+                error: (_, err) {
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
                               Text(
-                                'Total: ${CurrencyFormatter.format(amount)}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                                'Split Details',
+                                style: Theme.of(context).textTheme.titleSmall,
                               ),
-                          ],
-                        ),
-                        const Divider(),
-                        ...widget.group.members.map((memberId) {
-                          final split = _splitType == SplitType.equal
-                              ? amount / widget.group.members.length
-                              : _splitType == SplitType.family
-                                  ? _calculateSplitMap()[memberId] ?? 0.0
-                                  : _customSplits[memberId] ?? 0.0;
-
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 16,
-                                  child: Text(memberId[0].toUpperCase()),
+                              if (amount > 0)
+                                Text(
+                                  'Total: ${CurrencyFormatter.format(amount)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(memberId),
-                                      if (_splitType == SplitType.family)
-                                        Text(
-                                          'Share: ${(_memberShares[memberId] ?? 1.0).toStringAsFixed(1)}',
-                                          style: Theme.of(context).textTheme.bodySmall,
+                            ],
+                          ),
+                          const Divider(),
+                          ...widget.group!.members.map((memberId) {
+                            final split = _splitType == SplitType.equal
+                                ? amount / widget.group!.members.length
+                                : _splitType == SplitType.family
+                                ? _calculateSplitMap()[memberId] ?? 0.0
+                                : _customSplits[memberId] ?? 0.0;
+
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 16,
+                                    child: Text(memberId[0].toUpperCase()),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(memberId),
+                                        if (_splitType == SplitType.family)
+                                          Text(
+                                            'Share: ${(_memberShares[memberId] ?? 1.0).toStringAsFixed(1)}',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_splitType == SplitType.custom)
+                                    SizedBox(
+                                      width: 100,
+                                      child: TextFormField(
+                                        initialValue: split.toStringAsFixed(2),
+                                        decoration: const InputDecoration(
+                                          prefixText: '₹',
+                                          isDense: true,
                                         ),
-                                    ],
-                                  ),
-                                ),
-                                if (_splitType == SplitType.custom)
-                                  SizedBox(
-                                    width: 100,
-                                    child: TextFormField(
-                                      initialValue: split.toStringAsFixed(2),
-                                      decoration: const InputDecoration(
-                                        prefixText: '₹',
-                                        isDense: true,
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                            RegExp(r'^\d+\.?\d{0,2}'),
+                                          ),
+                                        ],
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _customSplits[memberId] =
+                                                double.tryParse(value) ?? 0.0;
+                                          });
+                                          // Auto-update main amount field
+                                          _updateAmountFromCustomSplits();
+                                        },
                                       ),
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                                      ],
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _customSplits[memberId] = double.tryParse(value) ?? 0.0;
-                                        });
-                                        // Auto-update main amount field
-                                        _updateAmountFromCustomSplits();
-                                      },
-                                    ),
-                                  )
-                                else if (_splitType == SplitType.family)
-                                  SizedBox(
-                                    width: 90,
-                                    child: TextFormField(
-                                      initialValue: (_memberShares[memberId] ?? 1.0).toString(),
-                                      decoration: const InputDecoration(
-                                        labelText: 'Share',
-                                        isDense: true,
-                                        hintText: '1 or 0.5',
+                                    )
+                                  else if (_splitType == SplitType.family)
+                                    SizedBox(
+                                      width: 90,
+                                      child: TextFormField(
+                                        initialValue:
+                                            (_memberShares[memberId] ?? 1.0)
+                                                .toString(),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Share',
+                                          isDense: true,
+                                          hintText: '1 or 0.5',
+                                        ),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                            RegExp(r'^\d+\.?\d{0,2}'),
+                                          ),
+                                        ],
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _memberShares[memberId] =
+                                                double.tryParse(value) ?? 1.0;
+                                          });
+                                        },
                                       ),
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                                      ],
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _memberShares[memberId] = double.tryParse(value) ?? 1.0;
-                                        });
-                                      },
+                                    )
+                                  else
+                                    Text(
+                                      CurrencyFormatter.format(split),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
                                     ),
-                                  )
-                                else
-                                  Text(
-                                    CurrencyFormatter.format(split),
-                                    style: Theme.of(context).textTheme.titleSmall,
-                                  ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-
-            // Add Button
-            ElevatedButton(
-              onPressed: _isLoading ? null : _addExpense,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                  );
+                },
               ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Add Expense'),
+              const SizedBox(height: 24),
+            ], // End of _isGroupExpense conditional
+            // Add/Save Button (for all expense types)
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _addExpense,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text(
+                        widget.expenseToEdit != null
+                            ? 'Update Expense'
+                            : 'Add Expense',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+              ),
             ),
           ],
         ),
@@ -882,4 +1266,3 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     );
   }
 }
-

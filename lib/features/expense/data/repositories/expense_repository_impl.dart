@@ -45,6 +45,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     required String category,
     required String type,
     String? attributedMemberId,
+    DateTime? date,
   }) async {
     // **VALIDATION LOGIC**
     if (groupId == null) {
@@ -76,7 +77,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       split: split, // Renamed from splitMap
       splitType: splitType,
       familyShares: familyShares,
-      date: DateTime.now(),
+      date: date ?? DateTime.now(),
       category: category,
       type: type,
       attributedMemberId: attributedMemberId,
@@ -152,6 +153,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     required String category,
     required String type,
     String? attributedMemberId,
+    DateTime? date,
   }) async {
     // Fetch the old expense to calculate reversal
     final oldExpenseDoc = await _firestore
@@ -222,7 +224,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       split: split, // Renamed from splitMap
       splitType: splitType,
       familyShares: familyShares,
-      date: oldExpense.date,
+      date: date ?? oldExpense.date,
       category: category,
       type: type,
       attributedMemberId: attributedMemberId,

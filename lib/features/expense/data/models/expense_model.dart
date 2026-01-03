@@ -17,6 +17,7 @@ class ExpenseModel {
   final String? splitType;
   final Map<String, double>? familyShares;
   final DateTime date;
+  final DateTime? createdAt;
   final String category;
   final String type;
   final String? attributedMemberId;
@@ -31,6 +32,7 @@ class ExpenseModel {
     this.splitType,
     this.familyShares,
     required this.date,
+    this.createdAt,
     required this.category,
     required this.type,
     this.attributedMemberId,
@@ -48,6 +50,7 @@ class ExpenseModel {
       splitType: splitType,
       familyShares: familyShares,
       date: date,
+      createdAt: createdAt,
       category: category,
       type: type,
       attributedMemberId: attributedMemberId,
@@ -66,6 +69,7 @@ class ExpenseModel {
       splitType: expense.splitType,
       familyShares: expense.familyShares,
       date: expense.date,
+      createdAt: expense.createdAt,
       category: expense.category,
       type: expense.type,
       attributedMemberId: expense.attributedMemberId,
@@ -113,6 +117,9 @@ class ExpenseModel {
             )
           : null,
       date: (data[FirebaseConstants.expenseDateField] as Timestamp).toDate(),
+      createdAt: data[FirebaseConstants.expenseCreatedAtField] != null
+          ? (data[FirebaseConstants.expenseCreatedAtField] as Timestamp).toDate()
+          : null,
       category: data[FirebaseConstants.expenseCategoryField] as String? ?? 'Other',
       type: data[FirebaseConstants.expenseTypeField] as String? ?? 'group',
       attributedMemberId: data[FirebaseConstants.expenseMemberIdField] as String?,

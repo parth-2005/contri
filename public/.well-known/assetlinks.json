@@ -3,10 +3,6 @@
   "target": {
     "namespace": "android_app",
     "package_name": "com.pjpanot.contri",
-    "sha256_cert_fingerprints": [
-      "C1:C4:BC:35:CE:49:94:8B:6A:0B:E7:A1:14:34:B9:8C:3A:57:D8:EB:D6:E8:8B:BE:82:7F:1F:4E:D5:C7:27:A7",
-      "30:E5:61:0D:51:CF:DF:99:EE:AB:05:8E:42:7F:E6:65:76:17:EF:6C:F6:77:A6:2E:ED:2D:F8:F8:6D:DB:B2:B7",
-      "D0:6E:94:BC:8F:13:5B:55:AA:4D:8F:BE:D1:36:19:80:BF:42:CA:C3:23:C6:B1:97:6B:55:2B:94:71:9B:94:9A"
-    ]
+    "sha256_cert_fingerprints": ["D0:6E:94:BC:8F:13:5B:55:AA:4D:8F:BE:D1:36:19:80:BF:42:CA:C3:23:C6:B1:97:6B:55:2B:94:71:9B:94:9A"]
   }
 }]

@@ -67,6 +67,36 @@ class GroupDetailsScreen extends ConsumerWidget {
       memberProfilesProvider(effectiveGroup.members),
     );
 
+    // ⚠️ CRITICAL SECURITY CHECK: Verify user is a member
+    if (currentUser != null && !effectiveGroup.members.contains(currentUser.id)) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Access Denied')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock, size: 80, color: Colors.red.shade300),
+              const SizedBox(height: 16),
+              Text(
+                'You are not a member of this group',
+                style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ask an existing member to share the invite link',
+                style: GoogleFonts.lato(fontSize: 14, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [

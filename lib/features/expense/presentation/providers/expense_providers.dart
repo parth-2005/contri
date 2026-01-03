@@ -58,7 +58,8 @@ class FilterParams {
 }
 
 /// Provider for personal overview data
-/// Calculates total spent this month and net balance, scoped to current user, kept live via stream
+/// Calculates total spent this month for personal expenses
+/// AND calculates owed/owing from all group expenses (not personal)
 final personalOverviewProvider = StreamProvider<PersonalOverview>((ref) {
   final repository = ref.watch(expenseRepositoryProvider);
   final authState = ref.watch(authStateProvider);
@@ -76,30 +77,48 @@ final personalOverviewProvider = StreamProvider<PersonalOverview>((ref) {
       final startOfMonth = DateTime(now.year, now.month, 1);
       final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
-      // Stream expenses for current month and derive overview, scoped to this user
-      return repository
-          .getFilteredExpenses(
-            startDate: startOfMonth,
-            endDate: endOfMonth,
-            memberId: user.id,
-            type: 'personal',
-          )
-          .map((expenses) {
+      // Get personal expenses for spending total
+      final personalExpensesStream = repository.getFilteredExpenses(
+        startDate: startOfMonth,
+        endDate: endOfMonth,
+        memberId: user.id,
+        type: 'personal',
+      );
+
+      // Get all group expenses for balance calculation
+      final groupExpensesStream = repository.getFilteredExpenses(
+        startDate: startOfMonth,
+        endDate: endOfMonth,
+        type: 'group',
+      );
+
+      // Combine both streams
+      return personalExpensesStream.asyncMap((personalExpenses) async {
+        final groupExpenses = await groupExpensesStream.first;
+        
+        // Total spent from personal expenses only
         double totalSpent = 0;
+        for (final expense in personalExpenses) {
+          totalSpent += expense.amount;
+        }
+
+        // Calculate owed/owing from group expenses only
         double totalOwed = 0; // Amount owed to user
         double totalOwing = 0; // Amount user owes to others
 
-        for (final expense in expenses) {
-          totalSpent += expense.amount;
-
-          // Calculate net balance from split map (still simplified)
-          expense.split.forEach((_, amount) {
-            if (amount > 0) {
-              totalOwed += amount;
-            } else {
-              totalOwing += amount.abs();
+        for (final expense in groupExpenses) {
+          // Only process if user is involved
+          if (expense.split.containsKey(user.id) || expense.paidBy == user.id) {
+            final userPaid = expense.paidBy == user.id ? expense.amount : 0.0;
+            final userOwes = expense.split[user.id] ?? 0.0;
+            final netForThisExpense = userPaid - userOwes;
+            
+            if (netForThisExpense > 0) {
+              totalOwed += netForThisExpense;
+            } else if (netForThisExpense < 0) {
+              totalOwing += netForThisExpense.abs();
             }
-          });
+          }
         }
 
         return PersonalOverview(

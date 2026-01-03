@@ -39,7 +39,11 @@ class Expense extends Equatable {
   /// Example: {parent1: 1.0, parent2: 1.0, child1: 0.5}
   final Map<String, double>? familyShares;
   
+  /// Expense date - user-selected date when expense occurred
   final DateTime date;
+  
+  /// Created at - timestamp when expense was recorded in the system
+  final DateTime? createdAt;
   
   /// Category: For analytics and AI insights
   /// Examples: 'Grocery', 'Fuel', 'EMI', 'Entertainment', 'Healthcare'
@@ -66,6 +70,7 @@ class Expense extends Equatable {
     this.splitType,
     this.familyShares,
     required this.date,
+    this.createdAt,
     required this.category,
     required this.type,
     this.attributedMemberId,
@@ -96,8 +101,7 @@ class Expense extends Equatable {
         split,
         splitType,
         familyShares,
-        date,
-        category,
+        date,        createdAt,        category,
         type,
         attributedMemberId,
       ];

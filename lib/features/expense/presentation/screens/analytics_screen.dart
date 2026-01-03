@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../providers/expense_providers.dart';
 import '../../domain/entities/expense.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Analytics Screen with filters for deep-dive insights
 class AnalyticsScreen extends ConsumerStatefulWidget {
@@ -16,7 +17,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   // Filter states
   String _selectedPeriod = 'This Month';
   String? _selectedCategory;
-  String? _selectedMember;
   DateTime? _customStartDate;
   DateTime? _customEndDate;
 
@@ -37,13 +37,20 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filterParams = _buildFilterParams();
+    final authState = ref.watch(authStateProvider);
+    final currentUser = authState.value;
+    
+    if (currentUser == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Analytics')),
+        body: const Center(child: Text('Sign in to view analytics')),
+      );
+    }
+
+    final filterParams = _buildFilterParams(currentUser.id);
     final expensesAsync = ref.watch(filteredExpensesProvider(filterParams));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Analytics'),
-      ),
       body: Column(
         children: [
           // Filter Bar
@@ -298,7 +305,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return Map.fromEntries(sortedEntries);
   }
 
-  FilterParams _buildFilterParams() {
+  FilterParams _buildFilterParams(String userId) {
     DateTime? startDate;
     DateTime? endDate;
     final now = DateTime.now();
@@ -327,7 +334,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       startDate: startDate,
       endDate: endDate,
       category: _selectedCategory,
-      memberId: _selectedMember,
+      memberId: userId,
+      type: 'personal',
     );
   }
 

@@ -7,7 +7,7 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/screens/profile_screen.dart';
 import '../../../expense/presentation/providers/expense_providers.dart';
 import '../../../expense/presentation/screens/analytics_screen.dart';
-import '../../../expense/presentation/screens/quick_add_expense_screen.dart';
+import '../../../expense/presentation/screens/add_expense_screen.dart';
 import '../../../../core/presentation/widgets/shimmer_loading.dart';
 
 /// Dashboard Screen - Personal Hub showing overview and recent activity
@@ -123,7 +123,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const QuickAddExpenseScreen(),
+                    builder: (context) => const AddExpenseScreen(),
                   ),
                 );
               },
@@ -434,7 +434,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: expenses.length > 10 ? 10 : expenses.length,
+                itemCount: expenses.length > 3 ? 3 : expenses.length,
                 itemBuilder: (context, index) {
                   final expense = expenses[index];
                   return Card(
@@ -452,34 +452,71 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       subtitle: Text(
                         '${expense.category} • ${_formatDate(expense.date)}',
                       ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            '₹${expense.amount.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _getTypeColor(expense.type),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              expense.type.toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 9,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '₹${expense.amount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
                               ),
-                            ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getTypeColor(expense.type),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  expense.type.toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert, size: 20),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _editExpense(context, expense);
+                              } else if (value == 'delete') {
+                                _confirmDeleteExpense(context, expense);
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Edit'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete, size: 18, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text('Delete', style: TextStyle(color: Colors.red)),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -652,6 +689,55 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         return Colors.orange;
       default:
         return Colors.grey;
+    }
+  }
+
+  void _editExpense(BuildContext context, expense) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddExpenseScreen(expenseToEdit: expense),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteExpense(BuildContext context, expense) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Expense'),
+        content: Text('Are you sure you want to delete "${expense.description}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await ref.read(expenseRepositoryProvider).deleteExpense(expense.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Expense deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting expense: $e')),
+          );
+        }
+      }
     }
   }
 }

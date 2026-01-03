@@ -23,6 +23,7 @@ abstract class ExpenseRepository {
     required String category,
     required String type,
     String? attributedMemberId,
+    DateTime? date,
   });
 
   /// Update an existing expense and recalculate group balances atomically
@@ -38,6 +39,7 @@ abstract class ExpenseRepository {
     required String category,
     required String type,
     String? attributedMemberId,
+    DateTime? date,
   });
 
   /// Fetch expenses for a specific group
