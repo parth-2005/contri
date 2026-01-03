@@ -161,6 +161,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildPersonalHub() {
+    final authState = ref.watch(authStateProvider);
+
+    if (authState.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final user = authState.value;
+    if (user == null) {
+      return const Center(child: Text('Sign in to view your personal expenses'));
+    }
+
     final overviewAsync = ref.watch(personalOverviewProvider);
     final now = DateTime.now();
     final startOfMonth = DateTime(now.year, now.month, 1);
@@ -170,6 +181,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       startDate: startOfMonth,
       endDate: endOfMonth,
       category: _selectedCategoryFilter,
+      memberId: user.id,
+      type: 'personal',
     );
     final expensesAsync = ref.watch(filteredExpensesProvider(filterParams));
 

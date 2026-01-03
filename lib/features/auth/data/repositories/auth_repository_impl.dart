@@ -12,39 +12,32 @@ class AuthRepositoryImpl implements AuthRepository {
   final GoogleSignIn _googleSignIn;
 
   AuthRepositoryImpl({
-    FirebaseAuth firebaseAuth = FirebaseAuth.instance,
-    FirebaseFirestore firestore = FirebaseFirestore.instance,
-    GoogleSignIn googleSignIn = const GoogleSignIn(),
-  })  : _firebaseAuth = firebaseAuth,
-        _firestore = firestore,
-        _googleSignIn = googleSignIn;
+    FirebaseAuth? firebaseAuth,
+    FirebaseFirestore? firestore,
+    GoogleSignIn? googleSignIn,
+  })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance,
+        _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
 
   @override
   Future<AppUser> signInWithGoogle() async {
     try {
-      // FIX 2: You MUST initialize before authenticating in v7
-      await _googleSignIn.initialize(); 
+      await _googleSignIn.initialize();
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
-      // FIX 3: Use authenticate() instead of signIn()
-      final GoogleSignInAccount? googleUser = await _googleSignIn.authenticate();
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
-      if (googleUser == null) {
-        throw Exception('Sign-in cancelled by user');
-      }
-
-      // authentication returns a Future<GoogleSignInAuthentication>
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-
-      // FIX 4: Use idToken (accessToken is often null/unnecessary now)
       final credential = GoogleAuthProvider.credential(
-        accessToken: null,
         idToken: googleAuth.idToken,
       );
 
       final UserCredential userCredential =
           await _firebaseAuth.signInWithCredential(credential);
 
-      final user = userCredential.user!;
+      final user = userCredential.user;
+      if (user == null) {
+        throw Exception('User not found after sign-in');
+      }
 
       final userModel = UserModel(
         id: user.uid,
@@ -70,11 +63,9 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<void> signOut() async {
     try {
-      // Initialize before disconnecting to avoid errors
-      await _googleSignIn.initialize(); 
       await Future.wait([
         _firebaseAuth.signOut(),
-        _googleSignIn.disconnect(),
+        _googleSignIn.signOut(),
       ]);
     } catch (e) {
       // Fallback if google sign out fails (e.g. not signed in)

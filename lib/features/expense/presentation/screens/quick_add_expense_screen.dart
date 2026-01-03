@@ -260,7 +260,7 @@ class _QuickAddExpenseScreenState
                       );
                     }
                     return DropdownButtonFormField<String>(
-                      value: _selectedGroupId,
+                      initialValue: _selectedGroupId,
                       decoration: const InputDecoration(
                         labelText: 'Select Group',
                         border: OutlineInputBorder(),

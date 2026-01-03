@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/repositories/expense_repository_impl.dart';
 import '../../domain/entities/expense.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Provider for ExpenseRepository
 final expenseRepositoryProvider = Provider((ref) {
@@ -57,46 +58,63 @@ class FilterParams {
 }
 
 /// Provider for personal overview data
-/// Calculates total spent this month and net balance
-final personalOverviewProvider = FutureProvider<PersonalOverview>((ref) async {
+/// Calculates total spent this month and net balance, scoped to current user, kept live via stream
+final personalOverviewProvider = StreamProvider<PersonalOverview>((ref) {
   final repository = ref.watch(expenseRepositoryProvider);
-  
-  // Get current month's start and end dates
-  final now = DateTime.now();
-  final startOfMonth = DateTime(now.year, now.month, 1);
-  final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-  
-  // Get expenses for current month
-  final expensesStream = repository.getFilteredExpenses(
-    startDate: startOfMonth,
-    endDate: endOfMonth,
-  );
-  
-  final expenses = await expensesStream.first;
-  
-  // Calculate total spent (sum of all expenses where user is the payer)
-  double totalSpent = 0;
-  double totalOwed = 0; // Amount owed to user
-  double totalOwing = 0; // Amount user owes to others
-  
-  for (final expense in expenses) {
-    totalSpent += expense.amount;
-    
-    // Calculate net balance from splitMap
-    expense.split.forEach((userId, amount) {
-      // This is simplified - you'd need current user ID to calculate properly
-      if (amount > 0) {
-        totalOwed += amount;
-      } else {
-        totalOwing += amount.abs();
+  final authState = ref.watch(authStateProvider);
+
+  return authState.when<Stream<PersonalOverview>>(
+    data: (user) {
+      if (user == null) {
+        return Stream.value(
+          PersonalOverview(totalSpentThisMonth: 0, totalOwed: 0, totalOwing: 0),
+        );
       }
-    });
-  }
-  
-  return PersonalOverview(
-    totalSpentThisMonth: totalSpent,
-    totalOwed: totalOwed,
-    totalOwing: totalOwing,
+
+      // Current month's start and end dates
+      final now = DateTime.now();
+      final startOfMonth = DateTime(now.year, now.month, 1);
+      final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+
+      // Stream expenses for current month and derive overview, scoped to this user
+      return repository
+          .getFilteredExpenses(
+            startDate: startOfMonth,
+            endDate: endOfMonth,
+            memberId: user.id,
+            type: 'personal',
+          )
+          .map((expenses) {
+        double totalSpent = 0;
+        double totalOwed = 0; // Amount owed to user
+        double totalOwing = 0; // Amount user owes to others
+
+        for (final expense in expenses) {
+          totalSpent += expense.amount;
+
+          // Calculate net balance from split map (still simplified)
+          expense.split.forEach((_, amount) {
+            if (amount > 0) {
+              totalOwed += amount;
+            } else {
+              totalOwing += amount.abs();
+            }
+          });
+        }
+
+        return PersonalOverview(
+          totalSpentThisMonth: totalSpent,
+          totalOwed: totalOwed,
+          totalOwing: totalOwing,
+        );
+      });
+    },
+    loading: () => Stream.value(
+      PersonalOverview(totalSpentThisMonth: 0, totalOwed: 0, totalOwing: 0),
+    ),
+    error: (error, stack) => Stream.value(
+      PersonalOverview(totalSpentThisMonth: 0, totalOwed: 0, totalOwing: 0),
+    ),
   );
 });
 

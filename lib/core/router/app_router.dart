@@ -22,10 +22,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // Handle custom scheme deep links like contri://join/xyz
+      // AND web deep links like https://contri-568d7.web.app/join/xyz
       final uri = state.uri;
       if (uri.scheme == 'contri' && uri.host == 'join') {
         final segments = uri.pathSegments;
         final groupId = segments.isNotEmpty ? segments.first : '';
+        if (groupId.isNotEmpty) {
+          return '/join/$groupId';
+        }
+      }
+      
+      // Handle Firebase hosting deep links
+      if (uri.host == 'contri-568d7.web.app' && 
+          uri.pathSegments.isNotEmpty && 
+          uri.pathSegments.first == 'join') {
+        final groupId = uri.pathSegments.length > 1 ? uri.pathSegments[1] : '';
         if (groupId.isNotEmpty) {
           return '/join/$groupId';
         }

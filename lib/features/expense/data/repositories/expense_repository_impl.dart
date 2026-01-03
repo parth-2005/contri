@@ -543,7 +543,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     }
     
     // Rule 3: Split must sum to total amount
-    final splitTotal = split.values.fold<double>(0.0, (sum, val) => sum + val);
+    final splitTotal = split.values.fold<double>(0.0, (runningTotal, val) => runningTotal + val);
     if ((splitTotal - amount).abs() > 0.01) {
       throw Exception(
         'Split total must equal expense amount. '
