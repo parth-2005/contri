@@ -21,7 +21,7 @@ final userGroupsProvider = StreamProvider<List<Group>>((ref) {
       return repository.getGroupsForUser(user.id);
     },
     loading: () => Stream.value([]),
-    error: (_, __) => Stream.value([]),
+    error: (_, err) => Stream.value([]),
   );
 });
 

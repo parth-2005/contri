@@ -93,7 +93,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
 
       // Refresh user data
-      await ref.refresh(authStateProvider.future);
+      ref.invalidate(authStateProvider);
+      await ref.read(authStateProvider.future);
 
       if (mounted) {
         setState(() {

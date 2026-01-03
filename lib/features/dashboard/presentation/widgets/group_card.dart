@@ -20,7 +20,7 @@ class GroupCard extends ConsumerWidget {
     final userBalance = authState.when(
       data: (user) => user != null ? group.getBalanceForUser(user.id) : 0.0,
       loading: () => 0.0,
-      error: (_, __) => 0.0,
+      error: (_, err) => 0.0,
     );
 
     return Card(

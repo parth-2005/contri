@@ -219,7 +219,7 @@ class _ExpenseTileState extends State<ExpenseTile> {
                     padding: const EdgeInsets.all(8),
                     child: Column(
                       children: [
-                        ...widget.expense.splitMap.entries.map((entry) {
+                        ...widget.expense.split.entries.map((entry) {
                           final member = widget.members[entry.key];
                           final memberName = member?.name ?? entry.key;
                           return Padding(
@@ -324,7 +324,7 @@ class _ExpenseTileState extends State<ExpenseTile> {
     if (widget.expense.paidBy == currentUserId) {
       // Calculate how much others owe them
       double othersOwe = 0;
-      for (final entry in widget.expense.splitMap.entries) {
+      for (final entry in widget.expense.split.entries) {
         if (entry.key != currentUserId) {
           othersOwe += entry.value;
         }
@@ -346,8 +346,8 @@ class _ExpenseTileState extends State<ExpenseTile> {
     }
 
     // User owes someone
-    if (widget.expense.splitMap.containsKey(currentUserId)) {
-      final amount = widget.expense.splitMap[currentUserId]!;
+    if (widget.expense.split.containsKey(currentUserId)) {
+      final amount = widget.expense.split[currentUserId]!;
       return (
         'You borrowed',
         CurrencyFormatter.format(amount),

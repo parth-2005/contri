@@ -1,4 +1,4 @@
-import 'dart:math';
+﻿import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -59,7 +59,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       _descriptionController.text = widget.expenseToEdit!.description;
       _amountController.text = _formatAmount(widget.expenseToEdit!.amount.toStringAsFixed(2));
       _paidBy = widget.expenseToEdit!.paidBy;
-      _customSplits.addAll(widget.expenseToEdit!.splitMap);
+      _customSplits.addAll(widget.expenseToEdit!.split);
       
       // Prefer stored splitType/familyShares when available
       if (widget.expenseToEdit!.splitType != null) {
@@ -89,7 +89,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         } else {
           _calculateMemberSharesFromSplitMap(
             widget.expenseToEdit!.amount,
-            widget.expenseToEdit!.splitMap,
+            widget.expenseToEdit!.split,
           );
         }
       }
@@ -101,7 +101,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   /// Detect which split type was used for an expense
   SplitType _detectSplitType(Expense expense) {
     final amount = expense.amount;
-    final splitMap = expense.splitMap;
+    final splitMap = expense.split;
     
     // Check if it's an equal split
     final memberCount = widget.group.members.length;
@@ -316,7 +316,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           description: _descriptionController.text.trim(),
           amount: amountValue,
           paidBy: _paidBy!,
-          splitMap: splitMap,
+          split: splitMap,
           splitType: _splitTypeString(),
           familyShares: _familySharesForPersistence(),
           category: widget.expenseToEdit!.category,
@@ -335,7 +335,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           description: _descriptionController.text.trim(),
           amount: amountValue,
           paidBy: _paidBy!,
-          splitMap: splitMap,
+          split: splitMap,
           splitType: _splitTypeString(),
           familyShares: _familySharesForPersistence(),
           category: 'Other',
@@ -475,7 +475,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               style: GoogleFonts.lato(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onBackground,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
               decoration: InputDecoration(
                 hintText: 'e.g., Groceries, Electricity Bill',
@@ -552,7 +552,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       );
                     },
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    separatorBuilder: (_, idx) => const SizedBox(width: 10),
                     itemCount: widget.group.members.length,
                   ),
                 );
@@ -567,7 +567,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                 ),
               ),
-              error: (_, __) => Wrap(
+              error: (_, err) => Wrap(
                 spacing: 8,
                 children: widget.group.members.map((memberId) {
                   return ChoiceChip(
@@ -733,7 +733,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                               ],
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ),
@@ -751,7 +751,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                 ),
               ),
-              error: (_, __) {
+              error: (_, err) {
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -853,7 +853,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                               ],
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ),
@@ -882,3 +882,4 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     );
   }
 }
+

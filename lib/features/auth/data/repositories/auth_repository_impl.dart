@@ -12,13 +12,12 @@ class AuthRepositoryImpl implements AuthRepository {
   final GoogleSignIn _googleSignIn;
 
   AuthRepositoryImpl({
-    FirebaseAuth? firebaseAuth,
-    FirebaseFirestore? firestore,
-    GoogleSignIn? googleSignIn,
-  })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance,
-        // FIX 1: Use .instance (Singleton) for v7+
-        _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
+    FirebaseAuth firebaseAuth = FirebaseAuth.instance,
+    FirebaseFirestore firestore = FirebaseFirestore.instance,
+    GoogleSignIn googleSignIn = const GoogleSignIn(),
+  })  : _firebaseAuth = firebaseAuth,
+        _firestore = firestore,
+        _googleSignIn = googleSignIn;
 
   @override
   Future<AppUser> signInWithGoogle() async {
@@ -33,6 +32,7 @@ class AuthRepositoryImpl implements AuthRepository {
         throw Exception('Sign-in cancelled by user');
       }
 
+      // authentication returns a Future<GoogleSignInAuthentication>
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
       // FIX 4: Use idToken (accessToken is often null/unnecessary now)

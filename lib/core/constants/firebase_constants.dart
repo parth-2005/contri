@@ -17,6 +17,9 @@ class FirebaseConstants {
   static const String groupBalancesField = 'balances';
   static const String groupDefaultSharesField = 'defaultShares';
   static const String groupCreatedAtField = 'createdAt';
+  static const String groupTypeField = 'type'; // trip, home, couple, other
+  static const String groupSettingsField = 'settings'; // Map<String, dynamic> for feature toggles
+  static const String groupTotalExpenseField = 'totalExpense'; // Cached sum of all expenses
   
   // Field Names - Expenses
   static const String expenseGroupIdField = 'groupId';

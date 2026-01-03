@@ -50,7 +50,7 @@ class GroupDetailsScreen extends ConsumerWidget {
     // responsible for in the splitMap of every expense.
     return expenses.fold<double>(0, (sum, e) {
       // Look up what the current user owes for this specific expense
-      final myShare = e.splitMap[currentUserId] ?? 0.0;
+      final myShare = e.split[currentUserId] ?? 0.0;
       return sum + myShare;
     });
   }
@@ -245,7 +245,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                                     ),
                                   ],
                                 ),
-                                error: (_, __) => const SizedBox.shrink(),
+                                error: (_, err) => const SizedBox.shrink(),
                               ),
                               const SizedBox(height: 14),
                               // "Settle Up" Button
@@ -362,7 +362,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-                error: (_, __) => Text(
+                error: (_, err) => Text(
                   'Error loading settlements',
                   style: GoogleFonts.lato(color: Colors.red),
                 ),

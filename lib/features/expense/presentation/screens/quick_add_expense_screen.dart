@@ -60,17 +60,17 @@ class _QuickAddExpenseScreenState
       final repository = ref.read(expenseRepositoryProvider);
       final amount = double.parse(_amountController.text);
 
-      // For personal expenses, use a default "personal" group ID
-      final groupId = _expenseType == 'group' && _selectedGroupId != null
+        // For personal expenses, groupId is null (unified model)
+        final String? groupId = _expenseType == 'group' && _selectedGroupId != null
           ? _selectedGroupId!
-          : 'personal_${currentUser.id}';
+          : null;
 
       await repository.createExpense(
         groupId: groupId,
         description: _descriptionController.text.trim(),
         amount: amount,
         paidBy: currentUser.id,
-        splitMap: {currentUser.id: amount}, // Personal: user pays and owes themselves
+        split: {currentUser.id: amount}, // Personal: user pays and owes themselves
         category: _selectedCategory,
         type: _expenseType,
         attributedMemberId: _selectedMemberId,

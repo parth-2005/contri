@@ -83,7 +83,7 @@ final personalOverviewProvider = FutureProvider<PersonalOverview>((ref) async {
     totalSpent += expense.amount;
     
     // Calculate net balance from splitMap
-    expense.splitMap.forEach((userId, amount) {
+    expense.split.forEach((userId, amount) {
       // This is simplified - you'd need current user ID to calculate properly
       if (amount > 0) {
         totalOwed += amount;

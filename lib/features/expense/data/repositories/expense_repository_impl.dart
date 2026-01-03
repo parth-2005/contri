@@ -7,6 +7,11 @@ import '../../../../core/constants/firebase_constants.dart';
 
 /// Implementation of ExpenseRepository
 /// Handles all client-side split logic to avoid Firebase Cloud Functions
+/// 
+/// AI-Ready Architecture:
+/// - Validates personal vs group expense constraints
+/// - Updates cached totalExpense for performance
+/// - Maintains atomic batch operations for consistency
 class ExpenseRepositoryImpl implements ExpenseRepository {
   final FirebaseFirestore _firestore;
   final Uuid _uuid;
@@ -17,33 +22,58 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _uuid = uuid ?? const Uuid();
 
-  /// **CORE SPLIT LOGIC METHOD**
+  /// **CORE SPLIT LOGIC METHOD - AI-Ready**
   /// Creates expense and updates group balances atomically using Firestore batch
   /// All calculations happen on the client side (Zero Cloud Function cost)
+  /// 
+  /// Personal Expense (groupId == null):
+  /// - Validates: paidBy == currentUser, split == {currentUser: amount}
+  /// - No group balance updates
+  /// 
+  /// Group Expense (groupId != null):
+  /// - Validates: paidBy in group.members, split sums to amount
+  /// - Updates group balances and totalExpense
   @override
   Future<void> createExpense({
-    required String groupId,
+    String? groupId, // NOW NULLABLE for personal expenses
     required String description,
     required double amount,
     required String paidBy,
-    required Map<String, double> splitMap,
+    required Map<String, double> split, // Renamed from splitMap
     String? splitType,
     Map<String, double>? familyShares,
     required String category,
     required String type,
     String? attributedMemberId,
   }) async {
+    // **VALIDATION LOGIC**
+    if (groupId == null) {
+      // Personal Expense Validation
+      _validatePersonalExpense(paidBy, split, amount);
+    } else {
+      // Group Expense Validation
+      await _validateGroupExpense(groupId, paidBy, split, amount);
+    }
+    // **VALIDATION LOGIC**
+    if (groupId == null) {
+      // Personal Expense Validation
+      _validatePersonalExpense(paidBy, split, amount);
+    } else {
+      // Group Expense Validation
+      await _validateGroupExpense(groupId, paidBy, split, amount);
+    }
+
     // Generate expense ID
     final expenseId = _uuid.v4();
 
     // Create Expense Model
     final expense = ExpenseModel(
       id: expenseId,
-      groupId: groupId,
+      groupId: groupId, // Can be null for personal expenses
       description: description,
       amount: amount,
       paidBy: paidBy,
-      splitMap: splitMap,
+      split: split, // Renamed from splitMap
       splitType: splitType,
       familyShares: familyShares,
       date: DateTime.now(),
@@ -55,14 +85,14 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     // **CLIENT-SIDE SPLIT LOGIC CALCULATION**
     // Calculate net impact for each user:
     // - Payer gets credited: +amount
-    // - Each person in splitMap gets debited: -splitMap[userId]
+    // - Each person in split gets debited: -split[userId]
     final Map<String, double> balanceUpdates = {};
 
     // Step 1: Credit the payer
     balanceUpdates[paidBy] = amount;
 
     // Step 2: Debit each person in the split
-    splitMap.forEach((userId, owedAmount) {
+    split.forEach((userId, owedAmount) {
       if (balanceUpdates.containsKey(userId)) {
         // If user is both payer and splitter (e.g., paying for themselves too)
         balanceUpdates[userId] = balanceUpdates[userId]! - owedAmount;
@@ -81,13 +111,14 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
         .doc(expenseId);
     batch.set(expenseRef, expense.toFirestore());
 
-    // 2. Update group balances ONLY if not personal expense
-    // Personal expenses don't affect group balances
-    if (type != 'personal') {
+    // 2. Update group balances and totalExpense ONLY for group expenses
+    // Personal expenses (groupId == null) don't affect group balances
+    if (groupId != null && type != 'personal') {
       final groupRef = _firestore
           .collection(FirebaseConstants.groupsCollection)
           .doc(groupId);
 
+      // Update balances for each affected user
       balanceUpdates.forEach((userId, balanceChange) {
         // Use dot notation to update nested map field atomically
         batch.update(groupRef, {
@@ -95,22 +126,27 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
               FieldValue.increment(balanceChange),
         });
       });
+      
+      // Update cached totalExpense in group document
+      batch.update(groupRef, {
+        FirebaseConstants.groupTotalExpenseField: FieldValue.increment(amount),
+      });
     }
 
     // Commit the batch - all updates happen atomically
     await batch.commit();
   }
 
-  /// **UPDATE EXPENSE METHOD**
+  /// **UPDATE EXPENSE METHOD - AI-Ready**
   /// Reverses old expense balance updates and applies new ones atomically
   @override
   Future<void> updateExpense({
-    required String groupId,
+    String? groupId, // NOW NULLABLE for personal expenses
     required String expenseId,
     required String description,
     required double amount,
     required String paidBy,
-    required Map<String, double> splitMap,
+    required Map<String, double> split, // Renamed from splitMap
     String? splitType,
     Map<String, double>? familyShares,
     required String category,
@@ -128,12 +164,21 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     }
 
     final oldExpense = ExpenseModel.fromFirestore(oldExpenseDoc);
+    
+    // **VALIDATION LOGIC**
+    if (groupId == null) {
+      // Personal Expense Validation
+      _validatePersonalExpense(paidBy, split, amount);
+    } else {
+      // Group Expense Validation
+      await _validateGroupExpense(groupId, paidBy, split, amount);
+    }
 
     // Step 1: Calculate balance updates to REVERSE the old expense
     final Map<String, double> reverseUpdates = {};
     reverseUpdates[oldExpense.paidBy] = -oldExpense.amount;
 
-    oldExpense.splitMap.forEach((userId, owedAmount) {
+    oldExpense.split.forEach((userId, owedAmount) {
       if (reverseUpdates.containsKey(userId)) {
         reverseUpdates[userId] = reverseUpdates[userId]! + owedAmount;
       } else {
@@ -145,7 +190,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     final Map<String, double> newUpdates = {};
     newUpdates[paidBy] = amount;
 
-    splitMap.forEach((userId, owedAmount) {
+    split.forEach((userId, owedAmount) {
       if (newUpdates.containsKey(userId)) {
         newUpdates[userId] = newUpdates[userId]! - owedAmount;
       } else {
@@ -174,7 +219,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       description: description,
       amount: amount,
       paidBy: paidBy,
-      splitMap: splitMap,
+      split: split, // Renamed from splitMap
       splitType: splitType,
       familyShares: familyShares,
       date: oldExpense.date,
@@ -185,12 +230,13 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
 
     batch.update(oldExpenseDoc.reference, newExpense.toFirestore());
 
-    // Update group balances ONLY if not personal expense
-    if (type != 'personal' && oldExpense.type != 'personal') {
+    // Update group balances and totalExpense ONLY for group expenses
+    if (groupId != null && type != 'personal' && oldExpense.groupId != null && oldExpense.type != 'personal') {
       final groupRef = _firestore
           .collection(FirebaseConstants.groupsCollection)
           .doc(groupId);
 
+      // Apply balance changes
       finalUpdates.forEach((userId, balanceChange) {
         if (balanceChange != 0) {
           batch.update(groupRef, {
@@ -199,6 +245,14 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
           });
         }
       });
+      
+      // Update cached totalExpense: subtract old, add new
+      final totalExpenseChange = amount - oldExpense.amount;
+      if (totalExpenseChange != 0) {
+        batch.update(groupRef, {
+          FirebaseConstants.groupTotalExpenseField: FieldValue.increment(totalExpenseChange),
+        });
+      }
     }
 
     await batch.commit();
@@ -290,7 +344,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     final Map<String, double> balanceUpdates = {};
     balanceUpdates[expense.paidBy] = -expense.amount;
 
-    expense.splitMap.forEach((userId, owedAmount) {
+    expense.split.forEach((userId, owedAmount) {
       if (balanceUpdates.containsKey(userId)) {
         balanceUpdates[userId] = balanceUpdates[userId]! + owedAmount;
       } else {
@@ -304,17 +358,24 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     // 1. Delete expense
     batch.delete(expenseDoc.reference);
 
-    // 2. Revert group balances
-    final groupRef = _firestore
-        .collection(FirebaseConstants.groupsCollection)
-        .doc(expense.groupId);
+    // 2. Revert group balances and totalExpense ONLY for group expenses
+    if (expense.groupId != null && expense.type != 'personal') {
+      final groupRef = _firestore
+          .collection(FirebaseConstants.groupsCollection)
+          .doc(expense.groupId!);
 
-    balanceUpdates.forEach((userId, balanceChange) {
-      batch.update(groupRef, {
-        '${FirebaseConstants.groupBalancesField}.$userId':
-            FieldValue.increment(balanceChange),
+      balanceUpdates.forEach((userId, balanceChange) {
+        batch.update(groupRef, {
+          '${FirebaseConstants.groupBalancesField}.$userId':
+              FieldValue.increment(balanceChange),
+        });
       });
-    });
+      
+      // Revert totalExpense
+      batch.update(groupRef, {
+        FirebaseConstants.groupTotalExpenseField: FieldValue.increment(-expense.amount),
+      });
+    }
 
     await batch.commit();
   }
@@ -343,7 +404,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       description: 'Payment settlement',
       amount: amount,
       paidBy: fromUserId,
-      splitMap: {toUserId: amount},
+      split: {toUserId: amount}, // Renamed from splitMap
       date: now,
       category: 'Settlement',
       type: 'group',
@@ -379,5 +440,115 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     });
 
     await batch.commit();
+  }
+  
+  /// **NEW METHOD: Get Personal Expenses**
+  /// Fetch all personal expenses for a user (groupId == null)
+  @override
+  Stream<List<Expense>> getPersonalExpenses(String userId) {
+    return _firestore
+        .collection(FirebaseConstants.expensesCollection)
+        .where(FirebaseConstants.expensePaidByField, isEqualTo: userId)
+        .orderBy(FirebaseConstants.expenseDateField, descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => ExpenseModel.fromFirestore(doc).toEntity())
+            .where((expense) => expense.groupId == null) // Filter for personal
+            .toList());
+  }
+  
+  /// **NEW METHOD: Get All User Expenses**
+  /// Fetch all expenses for a user (both personal and group)
+  @override
+  Stream<List<Expense>> getAllUserExpenses(String userId) {
+    return _firestore
+        .collection(FirebaseConstants.expensesCollection)
+        .where(FirebaseConstants.expensePaidByField, isEqualTo: userId)
+        .orderBy(FirebaseConstants.expenseDateField, descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => ExpenseModel.fromFirestore(doc).toEntity())
+            .toList());
+  }
+  
+  // **VALIDATION METHODS**
+  
+  /// Validates personal expense constraints
+  /// Rules:
+  /// 1. Split must contain only the paidBy user
+  /// 2. Split amount must equal total amount
+  void _validatePersonalExpense(
+    String paidBy,
+    Map<String, double> split,
+    double amount,
+  ) {
+    // Rule 1: Split must only contain paidBy user
+    if (split.length != 1 || !split.containsKey(paidBy)) {
+      throw Exception(
+        'Personal expense must be split only with the payer. '
+        'Expected: {$paidBy: $amount}, Got: $split'
+      );
+    }
+    
+    // Rule 2: Split amount must equal total
+    final splitAmount = split[paidBy] ?? 0.0;
+    if ((splitAmount - amount).abs() > 0.01) {
+      throw Exception(
+        'Personal expense split must equal total amount. '
+        'Expected: $amount, Got: $splitAmount'
+      );
+    }
+  }
+  
+  /// Validates group expense constraints
+  /// Rules:
+  /// 1. paidBy must be a group member
+  /// 2. All split users must be group members
+  /// 3. Split must sum to total amount
+  Future<void> _validateGroupExpense(
+    String groupId,
+    String paidBy,
+    Map<String, double> split,
+    double amount,
+  ) async {
+    // Fetch group to validate members
+    final groupDoc = await _firestore
+        .collection(FirebaseConstants.groupsCollection)
+        .doc(groupId)
+        .get();
+    
+    if (!groupDoc.exists) {
+      throw Exception('Group not found: $groupId');
+    }
+    
+    final groupData = groupDoc.data() as Map<String, dynamic>;
+    final members = List<String>.from(groupData[FirebaseConstants.groupMembersField] ?? []);
+    
+    // Rule 1: paidBy must be a group member
+    if (!members.contains(paidBy)) {
+      throw Exception(
+        'Payer must be a group member. '
+        'Group: $groupId, Payer: $paidBy, Members: $members'
+      );
+    }
+    
+    // Rule 2: All split users must be group members
+    for (final userId in split.keys) {
+      if (!members.contains(userId)) {
+        throw Exception(
+          'Split user must be a group member. '
+          'Group: $groupId, User: $userId, Members: $members'
+        );
+      }
+    }
+    
+    // Rule 3: Split must sum to total amount
+    final splitTotal = split.values.fold<double>(0.0, (sum, val) => sum + val);
+    if ((splitTotal - amount).abs() > 0.01) {
+      throw Exception(
+        'Split total must equal expense amount. '
+        'Expected: $amount, Got: $splitTotal'
+      );
+    }
   }
 }

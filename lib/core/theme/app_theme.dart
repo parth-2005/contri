@@ -22,11 +22,9 @@ class AppTheme {
         primary: primaryTealGreen,
         secondary: secondaryBeige,
         surface: backgroundOffWhite,
-        background: backgroundOffWhite,
         onPrimary: Colors.white,
         onSecondary: textDark,
         onSurface: textDark,
-        onBackground: textDark,
       ),
       
       // Scaffold

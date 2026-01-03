@@ -1,15 +1,23 @@
 import '../entities/expense.dart';
 
 /// Domain Repository Interface for Expense Operations
+/// 
+/// AI-Ready Architecture:
+/// - Supports both personal (groupId == null) and group (groupId != null) expenses
+/// - Validates data consistency for AI analysis
+/// - Updates cached totalExpense for performance
 abstract class ExpenseRepository {
   /// Create a new expense and update group balances atomically
   /// This is the core split logic method - all calculations happen client-side
+  /// 
+  /// If groupId is null: Creates a personal expense
+  /// If groupId is not null: Creates a group expense with validation
   Future<void> createExpense({
-    required String groupId,
+    String? groupId, // NOW NULLABLE for personal expenses
     required String description,
     required double amount,
     required String paidBy,
-    required Map<String, double> splitMap,
+    required Map<String, double> split, // Renamed from splitMap
     String? splitType,
     Map<String, double>? familyShares,
     required String category,
@@ -19,12 +27,12 @@ abstract class ExpenseRepository {
 
   /// Update an existing expense and recalculate group balances atomically
   Future<void> updateExpense({
-    required String groupId,
+    String? groupId, // NOW NULLABLE for personal expenses
     required String expenseId,
     required String description,
     required double amount,
     required String paidBy,
-    required Map<String, double> splitMap,
+    required Map<String, double> split, // Renamed from splitMap
     String? splitType,
     Map<String, double>? familyShares,
     required String category,
@@ -34,6 +42,12 @@ abstract class ExpenseRepository {
 
   /// Fetch expenses for a specific group
   Stream<List<Expense>> getExpensesForGroup(String groupId);
+  
+  /// Fetch personal expenses for a specific user (groupId == null)
+  Stream<List<Expense>> getPersonalExpenses(String userId);
+  
+  /// Fetch all expenses for a user (both personal and group)
+  Stream<List<Expense>> getAllUserExpenses(String userId);
 
   /// Fetch filtered expenses across all contexts
   Stream<List<Expense>> getFilteredExpenses({

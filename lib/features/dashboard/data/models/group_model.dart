@@ -10,6 +10,9 @@ class GroupModel {
   final Map<String, double> balances;
   final Map<String, double> defaultShares;
   final DateTime? createdAt;
+  final GroupType type;
+  final Map<String, dynamic> settings;
+  final double totalExpense;
 
   GroupModel({
     required this.id,
@@ -18,6 +21,9 @@ class GroupModel {
     required this.balances,
     this.defaultShares = const {},
     this.createdAt,
+    this.type = GroupType.other,
+    this.settings = const {},
+    this.totalExpense = 0.0,
   });
 
   /// Convert to Domain Entity
@@ -29,6 +35,9 @@ class GroupModel {
       balances: balances,
       defaultShares: defaultShares,
       createdAt: createdAt,
+      type: type,
+      settings: settings,
+      totalExpense: totalExpense,
     );
   }
 
@@ -41,6 +50,9 @@ class GroupModel {
       balances: group.balances,
       defaultShares: group.defaultShares,
       createdAt: group.createdAt,
+      type: group.type,
+      settings: group.settings,
+      totalExpense: group.totalExpense,
     );
   }
 
@@ -52,6 +64,9 @@ class GroupModel {
       FirebaseConstants.groupBalancesField: balances,
       FirebaseConstants.groupDefaultSharesField: defaultShares,
       FirebaseConstants.groupCreatedAtField: FieldValue.serverTimestamp(),
+      FirebaseConstants.groupTypeField: type.toShortString(),
+      FirebaseConstants.groupSettingsField: settings,
+      FirebaseConstants.groupTotalExpenseField: totalExpense,
     };
   }
 
@@ -73,6 +88,15 @@ class GroupModel {
       createdAt: data[FirebaseConstants.groupCreatedAtField] != null
           ? (data[FirebaseConstants.groupCreatedAtField] as Timestamp).toDate()
           : null,
+      type: data[FirebaseConstants.groupTypeField] != null
+          ? GroupTypeExtension.fromString(data[FirebaseConstants.groupTypeField] as String)
+          : GroupType.other,
+      settings: Map<String, dynamic>.from(
+        data[FirebaseConstants.groupSettingsField] as Map<String, dynamic>? ?? {},
+      ),
+      totalExpense: data[FirebaseConstants.groupTotalExpenseField] != null
+          ? (data[FirebaseConstants.groupTotalExpenseField] as num).toDouble()
+          : 0.0,
     );
   }
 }

@@ -3,13 +3,17 @@ import '../../domain/entities/expense.dart';
 import '../../../../core/constants/firebase_constants.dart';
 
 /// Data Model for Expense (Firestore)
+/// 
+/// Supports unified architecture:
+/// - groupId can be null for personal expenses
+/// - Maintains backward compatibility with existing data
 class ExpenseModel {
   final String id;
-  final String groupId;
+  final String? groupId; // NOW NULLABLE
   final String description;
   final double amount;
   final String paidBy;
-  final Map<String, double> splitMap;
+  final Map<String, double> split; // Renamed from splitMap
   final String? splitType;
   final Map<String, double>? familyShares;
   final DateTime date;
@@ -19,11 +23,11 @@ class ExpenseModel {
 
   ExpenseModel({
     required this.id,
-    required this.groupId,
+    this.groupId, // NOW NULLABLE
     required this.description,
     required this.amount,
     required this.paidBy,
-    required this.splitMap,
+    required this.split,
     this.splitType,
     this.familyShares,
     required this.date,
@@ -40,7 +44,7 @@ class ExpenseModel {
       description: description,
       amount: amount,
       paidBy: paidBy,
-      splitMap: splitMap,
+      split: split,
       splitType: splitType,
       familyShares: familyShares,
       date: date,
@@ -58,7 +62,7 @@ class ExpenseModel {
       description: expense.description,
       amount: expense.amount,
       paidBy: expense.paidBy,
-      splitMap: expense.splitMap,
+      split: expense.split,
       splitType: expense.splitType,
       familyShares: expense.familyShares,
       date: expense.date,
@@ -71,11 +75,12 @@ class ExpenseModel {
   /// Convert to Firestore Map
   Map<String, dynamic> toFirestore() {
     return {
-      FirebaseConstants.expenseGroupIdField: groupId,
+      // Only include groupId if it's not null (personal expenses omit this field)
+      if (groupId != null) FirebaseConstants.expenseGroupIdField: groupId,
       FirebaseConstants.expenseDescriptionField: description,
       FirebaseConstants.expenseAmountField: amount,
       FirebaseConstants.expensePaidByField: paidBy,
-      FirebaseConstants.expenseSplitMapField: splitMap,
+      FirebaseConstants.expenseSplitMapField: split,
       if (splitType != null) FirebaseConstants.expenseSplitTypeField: splitType,
       if (familyShares != null) FirebaseConstants.expenseFamilySharesField: familyShares,
       FirebaseConstants.expenseDateField: Timestamp.fromDate(date),
@@ -91,11 +96,12 @@ class ExpenseModel {
     final data = doc.data() as Map<String, dynamic>;
     return ExpenseModel(
       id: doc.id,
-      groupId: data[FirebaseConstants.expenseGroupIdField] as String,
+      // groupId is now nullable - allows personal expenses
+      groupId: data[FirebaseConstants.expenseGroupIdField] as String?,
       description: data[FirebaseConstants.expenseDescriptionField] as String,
       amount: (data[FirebaseConstants.expenseAmountField] as num).toDouble(),
       paidBy: data[FirebaseConstants.expensePaidByField] as String,
-      splitMap: Map<String, double>.from(
+      split: Map<String, double>.from(
         (data[FirebaseConstants.expenseSplitMapField] as Map<String, dynamic>)
             .map((key, value) => MapEntry(key, (value as num).toDouble())),
       ),
