@@ -29,6 +29,9 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     required Map<String, double> splitMap,
     String? splitType,
     Map<String, double>? familyShares,
+    required String category,
+    required String type,
+    String? attributedMemberId,
   }) async {
     // Generate expense ID
     final expenseId = _uuid.v4();
@@ -44,6 +47,9 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       splitType: splitType,
       familyShares: familyShares,
       date: DateTime.now(),
+      category: category,
+      type: type,
+      attributedMemberId: attributedMemberId,
     );
 
     // **CLIENT-SIDE SPLIT LOGIC CALCULATION**
@@ -75,18 +81,21 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
         .doc(expenseId);
     batch.set(expenseRef, expense.toFirestore());
 
-    // 2. Update group balances using FieldValue.increment (atomic operation)
-    final groupRef = _firestore
-        .collection(FirebaseConstants.groupsCollection)
-        .doc(groupId);
+    // 2. Update group balances ONLY if not personal expense
+    // Personal expenses don't affect group balances
+    if (type != 'personal') {
+      final groupRef = _firestore
+          .collection(FirebaseConstants.groupsCollection)
+          .doc(groupId);
 
-    balanceUpdates.forEach((userId, balanceChange) {
-      // Use dot notation to update nested map field atomically
-      batch.update(groupRef, {
-        '${FirebaseConstants.groupBalancesField}.$userId':
-            FieldValue.increment(balanceChange),
+      balanceUpdates.forEach((userId, balanceChange) {
+        // Use dot notation to update nested map field atomically
+        batch.update(groupRef, {
+          '${FirebaseConstants.groupBalancesField}.$userId':
+              FieldValue.increment(balanceChange),
+        });
       });
-    });
+    }
 
     // Commit the batch - all updates happen atomically
     await batch.commit();
@@ -104,6 +113,9 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     required Map<String, double> splitMap,
     String? splitType,
     Map<String, double>? familyShares,
+    required String category,
+    required String type,
+    String? attributedMemberId,
   }) async {
     // Fetch the old expense to calculate reversal
     final oldExpenseDoc = await _firestore
@@ -166,23 +178,28 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       splitType: splitType,
       familyShares: familyShares,
       date: oldExpense.date,
+      category: category,
+      type: type,
+      attributedMemberId: attributedMemberId,
     );
 
     batch.update(oldExpenseDoc.reference, newExpense.toFirestore());
 
-    // Update group balances
-    final groupRef = _firestore
-        .collection(FirebaseConstants.groupsCollection)
-        .doc(groupId);
+    // Update group balances ONLY if not personal expense
+    if (type != 'personal' && oldExpense.type != 'personal') {
+      final groupRef = _firestore
+          .collection(FirebaseConstants.groupsCollection)
+          .doc(groupId);
 
-    finalUpdates.forEach((userId, balanceChange) {
-      if (balanceChange != 0) {
-        batch.update(groupRef, {
-          '${FirebaseConstants.groupBalancesField}.$userId':
-              FieldValue.increment(balanceChange),
-        });
-      }
-    });
+      finalUpdates.forEach((userId, balanceChange) {
+        if (balanceChange != 0) {
+          batch.update(groupRef, {
+            '${FirebaseConstants.groupBalancesField}.$userId':
+                FieldValue.increment(balanceChange),
+          });
+        }
+      });
+    }
 
     await batch.commit();
   }
@@ -197,6 +214,62 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
         .map((snapshot) => snapshot.docs
             .map((doc) => ExpenseModel.fromFirestore(doc).toEntity())
             .toList());
+  }
+
+  /// Fetch filtered expenses across all contexts
+  /// Performs date-based query on Firestore and applies other filters in-memory
+  @override
+  Stream<List<Expense>> getFilteredExpenses({
+    DateTime? startDate,
+    DateTime? endDate,
+    String? category,
+    String? memberId,
+    String? type,
+  }) {
+    // Build Firestore query with date filter to reduce data transfer
+    Query query = _firestore
+        .collection(FirebaseConstants.expensesCollection)
+        .orderBy(FirebaseConstants.expenseDateField, descending: true);
+
+    // Apply date range filters if provided
+    if (startDate != null) {
+      query = query.where(
+        FirebaseConstants.expenseDateField,
+        isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+      );
+    }
+    if (endDate != null) {
+      query = query.where(
+        FirebaseConstants.expenseDateField,
+        isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+      );
+    }
+
+    // Stream and apply in-memory filters for category, member, and type
+    return query.snapshots().map((snapshot) {
+      var expenses = snapshot.docs
+          .map((doc) => ExpenseModel.fromFirestore(doc).toEntity())
+          .toList();
+
+      // Apply category filter
+      if (category != null && category.isNotEmpty) {
+        expenses = expenses.where((e) => e.category == category).toList();
+      }
+
+      // Apply member filter
+      if (memberId != null && memberId.isNotEmpty) {
+        expenses = expenses
+            .where((e) => e.attributedMemberId == memberId || e.paidBy == memberId)
+            .toList();
+      }
+
+      // Apply type filter
+      if (type != null && type.isNotEmpty) {
+        expenses = expenses.where((e) => e.type == type).toList();
+      }
+
+      return expenses;
+    });
   }
 
   @override
@@ -272,6 +345,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       paidBy: fromUserId,
       splitMap: {toUserId: amount},
       date: now,
+      category: 'Settlement',
+      type: 'group',
     );
 
     // Calculate balance updates

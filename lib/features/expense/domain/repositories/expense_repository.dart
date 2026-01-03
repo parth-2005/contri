@@ -12,6 +12,9 @@ abstract class ExpenseRepository {
     required Map<String, double> splitMap,
     String? splitType,
     Map<String, double>? familyShares,
+    required String category,
+    required String type,
+    String? attributedMemberId,
   });
 
   /// Update an existing expense and recalculate group balances atomically
@@ -24,10 +27,22 @@ abstract class ExpenseRepository {
     required Map<String, double> splitMap,
     String? splitType,
     Map<String, double>? familyShares,
+    required String category,
+    required String type,
+    String? attributedMemberId,
   });
 
   /// Fetch expenses for a specific group
   Stream<List<Expense>> getExpensesForGroup(String groupId);
+
+  /// Fetch filtered expenses across all contexts
+  Stream<List<Expense>> getFilteredExpenses({
+    DateTime? startDate,
+    DateTime? endDate,
+    String? category,
+    String? memberId,
+    String? type,
+  });
 
   /// Delete an expense and revert group balances
   Future<void> deleteExpense(String expenseId);

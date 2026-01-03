@@ -319,6 +319,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           splitMap: splitMap,
           splitType: _splitTypeString(),
           familyShares: _familySharesForPersistence(),
+          category: widget.expenseToEdit!.category,
+          type: widget.expenseToEdit!.type,
         );
         if (mounted) {
           Navigator.pop(context);
@@ -336,6 +338,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           splitMap: splitMap,
           splitType: _splitTypeString(),
           familyShares: _familySharesForPersistence(),
+          category: 'Other',
+          type: 'group',
         );
         if (mounted) {
           Navigator.pop(context);

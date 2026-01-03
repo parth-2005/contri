@@ -13,6 +13,9 @@ class ExpenseModel {
   final String? splitType;
   final Map<String, double>? familyShares;
   final DateTime date;
+  final String category;
+  final String type;
+  final String? attributedMemberId;
 
   ExpenseModel({
     required this.id,
@@ -24,6 +27,9 @@ class ExpenseModel {
     this.splitType,
     this.familyShares,
     required this.date,
+    required this.category,
+    required this.type,
+    this.attributedMemberId,
   });
 
   /// Convert to Domain Entity
@@ -38,6 +44,9 @@ class ExpenseModel {
       splitType: splitType,
       familyShares: familyShares,
       date: date,
+      category: category,
+      type: type,
+      attributedMemberId: attributedMemberId,
     );
   }
 
@@ -53,6 +62,9 @@ class ExpenseModel {
       splitType: expense.splitType,
       familyShares: expense.familyShares,
       date: expense.date,
+      category: expense.category,
+      type: expense.type,
+      attributedMemberId: expense.attributedMemberId,
     );
   }
 
@@ -68,6 +80,9 @@ class ExpenseModel {
       if (familyShares != null) FirebaseConstants.expenseFamilySharesField: familyShares,
       FirebaseConstants.expenseDateField: Timestamp.fromDate(date),
       FirebaseConstants.expenseCreatedAtField: FieldValue.serverTimestamp(),
+      FirebaseConstants.expenseCategoryField: category,
+      FirebaseConstants.expenseTypeField: type,
+      if (attributedMemberId != null) FirebaseConstants.expenseMemberIdField: attributedMemberId,
     };
   }
 
@@ -92,6 +107,9 @@ class ExpenseModel {
             )
           : null,
       date: (data[FirebaseConstants.expenseDateField] as Timestamp).toDate(),
+      category: data[FirebaseConstants.expenseCategoryField] as String? ?? 'Other',
+      type: data[FirebaseConstants.expenseTypeField] as String? ?? 'group',
+      attributedMemberId: data[FirebaseConstants.expenseMemberIdField] as String?,
     );
   }
 }

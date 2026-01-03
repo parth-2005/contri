@@ -28,4 +28,7 @@ class FirebaseConstants {
   static const String expenseFamilySharesField = 'familyShares';
   static const String expenseDateField = 'date';
   static const String expenseCreatedAtField = 'createdAt';
+  static const String expenseCategoryField = 'category';
+  static const String expenseTypeField = 'type'; // personal, family, group
+  static const String expenseMemberIdField = 'memberId'; // For tracking specific family members
 }
