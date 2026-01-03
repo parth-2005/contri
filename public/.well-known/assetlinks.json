@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.pjpanot.contri",
+    "sha256_cert_fingerprints": ["D0:6E:94:BC:8F:13:5B:55:AA:4D:8F:BE:D1:36:19:80:BF:42:CA:C3:23:C6:B1:97:6B:55:2B:94:71:9B:94:9A"]
+  }
+}]

@@ -20,7 +20,10 @@ import '../widgets/expense_tile.dart';
 import '../providers/group_providers.dart';
 
 /// Provider for expenses in a group
-final groupExpensesProvider = StreamProvider.family<List<Expense>, String>((ref, groupId) {
+final groupExpensesProvider = StreamProvider.family<List<Expense>, String>((
+  ref,
+  groupId,
+) {
   final repository = ref.watch(expenseRepositoryProvider);
   return repository.getExpensesForGroup(groupId);
 });
@@ -43,27 +46,13 @@ class GroupDetailsScreen extends ConsumerWidget {
   ) {
     if (currentUserId == null) return 0.0;
 
-    // Total amount paid by current user
-    final totalPaid = expenses
-        .where((e) => e.paidBy == currentUserId)
-        .fold<double>(0, (sum, e) => sum + e.amount);
-
-    // Total amount the current user owes others (from splitMap)
-    final totalOwed = expenses.fold<double>(0, (sum, e) {
-      return sum + (e.splitMap[currentUserId] ?? 0);  
+    // Personal Expense is simply the sum of the portions the user is
+    // responsible for in the splitMap of every expense.
+    return expenses.fold<double>(0, (sum, e) {
+      // Look up what the current user owes for this specific expense
+      final myShare = e.splitMap[currentUserId] ?? 0.0;
+      return sum + myShare;
     });
-
-    // Personal expense = Total paid - Total owed by others (what I get back)
-    // Which is: Total paid - (Total paid by me - Net balance I owe)
-    // Simpler way: Personal expense = Total paid by me - Total received back from others
-    // Total received = Total paid - (Total paid - what I'm paying my share on)
-    
-    // Actually: Personal Expense = Amount I paid that I didn't split = Total I paid - (Total paid by others that I was in split)
-    final receivedFromOthers = expenses
-        .where((e) => e.paidBy != currentUserId)
-        .fold<double>(0, (sum, e) => sum + (e.splitMap[currentUserId] ?? 0));
-
-    return totalPaid - receivedFromOthers;
   }
 
   @override
@@ -74,7 +63,9 @@ class GroupDetailsScreen extends ConsumerWidget {
     // Live group stream for reactive balances/members
     final liveGroupAsync = ref.watch(groupByIdProvider(group.id));
     final effectiveGroup = liveGroupAsync.value ?? group;
-    final membersAsync = ref.watch(memberProfilesProvider(effectiveGroup.members));
+    final membersAsync = ref.watch(
+      memberProfilesProvider(effectiveGroup.members),
+    );
 
     return Scaffold(
       body: CustomScrollView(
@@ -128,19 +119,26 @@ class GroupDetailsScreen extends ConsumerWidget {
                     end: Alignment.bottomRight,
                     colors: [
                       Theme.of(context).colorScheme.primary,
-                      Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                      Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.8),
                     ],
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 60, left: 16, right: 16, bottom: 12),
+                  padding: const EdgeInsets.only(
+                    top: 60,
+                    left: 16,
+                    right: 16,
+                    bottom: 12,
+                  ),
                   child: SingleChildScrollView(
                     physics: const NeverScrollableScrollPhysics(),
                     child: Builder(
                       builder: (ctx) {
                         final balance = currentUser != null
-                          ? effectiveGroup.getBalanceForUser(currentUser.id)
-                          : 0.0;
+                            ? effectiveGroup.getBalanceForUser(currentUser.id)
+                            : 0.0;
                         final isOwe = balance < 0;
                         final displayText = isOwe ? 'You Owe' : 'You Lend';
                         final displayColor = isOwe ? Colors.red : Colors.green;
@@ -183,9 +181,13 @@ class GroupDetailsScreen extends ConsumerWidget {
                               expensesAsync.when(
                                 data: (expenses) {
                                   final personalExpense =
-                                      _calculatePersonalExpense(expenses, currentUser?.id);
+                                      _calculatePersonalExpense(
+                                        expenses,
+                                        currentUser?.id,
+                                      );
                                   return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
@@ -193,12 +195,16 @@ class GroupDetailsScreen extends ConsumerWidget {
                                         style: GoogleFonts.lato(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w500,
-                                          color: Colors.white.withValues(alpha: 0.7),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.7,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(height: 3),
                                       Text(
-                                        CurrencyFormatter.format(personalExpense),
+                                        CurrencyFormatter.format(
+                                          personalExpense,
+                                        ),
                                         style: GoogleFonts.lato(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
@@ -217,7 +223,9 @@ class GroupDetailsScreen extends ConsumerWidget {
                                       style: GoogleFonts.lato(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w500,
-                                        color: Colors.white.withValues(alpha: 0.7),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.7,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 3),
@@ -226,8 +234,12 @@ class GroupDetailsScreen extends ConsumerWidget {
                                       height: 16,
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.2),
-                                          borderRadius: BorderRadius.circular(3),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.2,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            3,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -242,13 +254,21 @@ class GroupDetailsScreen extends ConsumerWidget {
                                 child: ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.white,
-                                    foregroundColor: Theme.of(context).colorScheme.primary,
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                   ),
-                                  onPressed: () => _showSettlementPlan(context, ref, currentUser?.id),
+                                  onPressed: () => _showSettlementPlan(
+                                    context,
+                                    ref,
+                                    currentUser?.id,
+                                  ),
                                   child: Text(
                                     'Settle Up',
                                     style: GoogleFonts.lato(
@@ -272,11 +292,15 @@ class GroupDetailsScreen extends ConsumerWidget {
           // Settlement Plan Section (Expandable Header Summary)
           SliverToBoxAdapter(
             child: Container(
-              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.3),
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.3),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: membersAsync.when(
                 data: (members) {
-                  final settlements = DebtCalculator.calculateSettlements(effectiveGroup.balances);
+                  final settlements = DebtCalculator.calculateSettlements(
+                    effectiveGroup.balances,
+                  );
                   if (settlements.isEmpty) {
                     return Text(
                       'Everyone is settled up! 🎉',
@@ -300,9 +324,11 @@ class GroupDetailsScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 8),
                       ...settlements.take(2).map((settlement) {
-                        final fromName = members[settlement.fromUserId]?.name ?? 
+                        final fromName =
+                            members[settlement.fromUserId]?.name ??
                             settlement.fromUserId;
-                        final toName = members[settlement.toUserId]?.name ?? 
+                        final toName =
+                            members[settlement.toUserId]?.name ??
                             settlement.toUserId;
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
@@ -332,7 +358,9 @@ class GroupDetailsScreen extends ConsumerWidget {
                 },
                 loading: () => const SizedBox(
                   height: 40,
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
                 error: (_, __) => Text(
                   'Error loading settlements',
@@ -354,10 +382,9 @@ class GroupDetailsScreen extends ConsumerWidget {
                         Icon(
                           Icons.receipt_long,
                           size: 80,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.3),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -381,7 +408,8 @@ class GroupDetailsScreen extends ConsumerWidget {
                 );
               }
 
-              final sortedExpenses = [...expenses]..sort((a, b) => b.date.compareTo(a.date));
+              final sortedExpenses = [...expenses]
+                ..sort((a, b) => b.date.compareTo(a.date));
               final Map<String, List<Expense>> groupedByMonth = {};
 
               for (final expense in sortedExpenses) {
@@ -396,29 +424,28 @@ class GroupDetailsScreen extends ConsumerWidget {
                     delegate: _MonthHeaderDelegate(label: entry.key),
                   ),
                   SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final expense = entry.value[index];
-                        return membersAsync.when(
-                          data: (members) => ExpenseTile(
-                            expense: expense,
-                            members: members,
-                            currentUserId: currentUser?.id,
-                            onEdit: () => _editExpense(context, ref, expense),
-                            onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
-                          ),
-                          loading: () => const ExpenseTileShimmer(),
-                          error: (error, stackTrace) => ExpenseTile(
-                            expense: expense,
-                            members: {},
-                            currentUserId: currentUser?.id,
-                            onEdit: () => _editExpense(context, ref, expense),
-                            onDelete: () => _confirmAndDeleteExpense(context, ref, expense),
-                          ),
-                        );
-                      },
-                      childCount: entry.value.length,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final expense = entry.value[index];
+                      return membersAsync.when(
+                        data: (members) => ExpenseTile(
+                          expense: expense,
+                          members: members,
+                          currentUserId: currentUser?.id,
+                          onEdit: () => _editExpense(context, ref, expense),
+                          onDelete: () =>
+                              _confirmAndDeleteExpense(context, ref, expense),
+                        ),
+                        loading: () => const ExpenseTileShimmer(),
+                        error: (error, stackTrace) => ExpenseTile(
+                          expense: expense,
+                          members: {},
+                          currentUserId: currentUser?.id,
+                          onEdit: () => _editExpense(context, ref, expense),
+                          onDelete: () =>
+                              _confirmAndDeleteExpense(context, ref, expense),
+                        ),
+                      );
+                    }, childCount: entry.value.length),
                   ),
                 ];
               }).toList();
@@ -465,9 +492,7 @@ class GroupDetailsScreen extends ConsumerWidget {
           ),
 
           // Bottom spacing for FAB
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 80),
-          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -479,153 +504,166 @@ class GroupDetailsScreen extends ConsumerWidget {
   }
 
   /// Show Settlement Plan Dialog with Payment Interface
-  void _showSettlementPlan(BuildContext context, WidgetRef ref, String? currentUserId) {
+  void _showSettlementPlan(
+    BuildContext context,
+    WidgetRef ref,
+    String? currentUserId,
+  ) {
     final effectiveGroup = ref.read(groupByIdProvider(group.id)).value ?? group;
-    ref.read(memberProfilesProvider(effectiveGroup.members)).when(
-      data: (members) {
-        final settlements = DebtCalculator.calculateSettlements(effectiveGroup.balances);
-        // Filter to show only settlements where current user owes
-        final myPayments = settlements.where((s) => s.fromUserId == currentUserId).toList();
+    ref
+        .read(memberProfilesProvider(effectiveGroup.members))
+        .when(
+          data: (members) {
+            final settlements = DebtCalculator.calculateSettlements(
+              effectiveGroup.balances,
+            );
+            // Filter to show only settlements where current user owes
+            final myPayments = settlements
+                .where((s) => s.fromUserId == currentUserId)
+                .toList();
 
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(
-              'Payments Due',
-              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (myPayments.isEmpty) ...[
-                    Icon(
-                      Icons.check_circle,
-                      size: 48,
-                      color: Colors.green.shade700,
-                    ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: Text(
-                        'You don\'t owe anyone!',
-                        style: GoogleFonts.lato(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text(
+                  'Payments Due',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (myPayments.isEmpty) ...[
+                        Icon(
+                          Icons.check_circle,
+                          size: 48,
                           color: Colors.green.shade700,
                         ),
-                      ),
-                    ),
-                  ] else
-                    ...myPayments.map((settlement) {
-                      final toName = members[settlement.toUserId]?.name ?? 
-                          settlement.toUserId;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: InkWell(
-                          onTap: () => _showPaymentDialog(
-                            context,
-                            ref,
-                            settlement,
-                            toName,
-                            currentUserId,
-                          ),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Colors.red.shade300,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              color: Colors.red.shade50,
-                            ),
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Pay $toName',
-                                        style: GoogleFonts.lato(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Tap to make payment',
-                                        style: GoogleFonts.lato(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Text(
-                                  CurrencyFormatter.format(settlement.amount),
-                                  style: GoogleFonts.lato(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14,
-                                    color: Colors.red.shade700,
-                                  ),
-                                ),
-                              ],
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Text(
+                            'You don\'t owe anyone!',
+                            style: GoogleFonts.lato(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green.shade700,
                             ),
                           ),
                         ),
-                      );
-                    }),
+                      ] else
+                        ...myPayments.map((settlement) {
+                          final toName =
+                              members[settlement.toUserId]?.name ??
+                              settlement.toUserId;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: InkWell(
+                              onTap: () => _showPaymentDialog(
+                                context,
+                                ref,
+                                settlement,
+                                toName,
+                                currentUserId,
+                              ),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: Colors.red.shade300,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                  color: Colors.red.shade50,
+                                ),
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Pay $toName',
+                                            style: GoogleFonts.lato(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Tap to make payment',
+                                            style: GoogleFonts.lato(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      CurrencyFormatter.format(
+                                        settlement.amount,
+                                      ),
+                                      style: GoogleFonts.lato(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'Close',
+                      style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ],
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'Close',
-                  style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+            );
+          },
+          loading: () {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text(
+                  'Payments Due',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                ),
+                content: const CircularProgressIndicator(),
+              ),
+            );
+          },
+          error: (error, stack) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Error loading settlement plan: $error',
+                  style: GoogleFonts.lato(),
                 ),
               ),
-            ],
-          ),
+            );
+          },
         );
-      },
-      loading: () {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(
-              'Payments Due',
-              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
-            ),
-            content: const CircularProgressIndicator(),
-          ),
-        );
-      },
-      error: (error, stack) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error loading settlement plan: $error',
-              style: GoogleFonts.lato(),
-            ),
-          ),
-        );
-      },
-    );
   }
 
   /// Add new expense
   void _addExpense(BuildContext context, WidgetRef ref) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => AddExpenseScreen(group: group),
-      ),
+      MaterialPageRoute(builder: (context) => AddExpenseScreen(group: group)),
     );
   }
 
@@ -634,24 +672,34 @@ class GroupDetailsScreen extends ConsumerWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddExpenseScreen(
-          group: group,
-          expenseToEdit: expense,
-        ),
+        builder: (context) =>
+            AddExpenseScreen(group: group, expenseToEdit: expense),
       ),
     );
   }
 
   /// Confirm and delete an expense
-  Future<void> _confirmAndDeleteExpense(BuildContext context, WidgetRef ref, Expense expense) async {
+  Future<void> _confirmAndDeleteExpense(
+    BuildContext context,
+    WidgetRef ref,
+    Expense expense,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Expense'),
-        content: const Text('Are you sure you want to delete this expense? This will also revert balances.'),
+        content: const Text(
+          'Are you sure you want to delete this expense? This will also revert balances.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -662,15 +710,15 @@ class GroupDetailsScreen extends ConsumerWidget {
       final repository = ref.read(expenseRepositoryProvider);
       await repository.deleteExpense(expense.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Expense deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Expense deleted')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete expense: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete expense: $e')));
       }
     }
   }
@@ -684,14 +732,14 @@ class GroupDetailsScreen extends ConsumerWidget {
 
   /// Share group
   void _shareGroup(BuildContext context) {
-    final deepLink = 'contri://join/${group.id}';
+    final deepLink = 'https://contri-568d7.web.app/join/${group.id}';
     final message =
         'Join my group "${group.name}" on Contri!\n\nUse this link: $deepLink';
     Share.share(message);
   }
 
   void _showQrCode(BuildContext context) {
-    final deepLink = 'contri://join/${group.id}';
+    final deepLink = 'https://contri-568d7.web.app/join/${group.id}';
 
     showDialog(
       context: context,
@@ -853,15 +901,26 @@ class GroupDetailsScreen extends ConsumerWidget {
   }
 
   /// Confirm and delete the group
-  Future<void> _confirmAndDeleteGroup(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmAndDeleteGroup(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Group'),
-        content: const Text('Deleting the group will remove all its expenses. This action cannot be undone.'),
+        content: const Text(
+          'Deleting the group will remove all its expenses. This action cannot be undone.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -872,16 +931,16 @@ class GroupDetailsScreen extends ConsumerWidget {
       final repository = ref.read(groupRepositoryProvider);
       await repository.deleteGroup(group.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Group deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Group deleted')));
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete group: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete group: $e')));
       }
     }
   }
@@ -936,9 +995,12 @@ class GroupDetailsScreen extends ConsumerWidget {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    helperText: 'Total owed: ${CurrencyFormatter.format(settlement.amount)}',
+                    helperText:
+                        'Total owed: ${CurrencyFormatter.format(settlement.amount)}',
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter amount';
@@ -1001,15 +1063,15 @@ class GroupDetailsScreen extends ConsumerWidget {
     String toName,
   ) async {
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not authenticated')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('User not authenticated')));
       return;
     }
 
     try {
       final repository = ref.read(expenseRepositoryProvider);
-      
+
       await repository.recordPayment(
         groupId: group.id,
         fromUserId: currentUserId,
@@ -1030,9 +1092,9 @@ class GroupDetailsScreen extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error recording payment: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error recording payment: $e')));
       }
     }
   }
@@ -1050,9 +1112,15 @@ class _MonthHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 44;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
-      color: AppTheme.secondaryBeige.withValues(alpha: overlapsContent ? 0.96 : 1),
+      color: AppTheme.secondaryBeige.withValues(
+        alpha: overlapsContent ? 0.96 : 1,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Align(
         alignment: Alignment.centerLeft,
@@ -1069,6 +1137,6 @@ class _MonthHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  bool shouldRebuild(covariant _MonthHeaderDelegate oldDelegate) => oldDelegate.label != label;
+  bool shouldRebuild(covariant _MonthHeaderDelegate oldDelegate) =>
+      oldDelegate.label != label;
 }
-

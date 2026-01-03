@@ -1,4 +1,4 @@
-package com.example.contri
+package com.pjpanot.contri
 
 import io.flutter.embedding.android.FlutterActivity
 
