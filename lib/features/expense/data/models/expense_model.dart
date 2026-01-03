@@ -21,6 +21,8 @@ class ExpenseModel {
   final String category;
   final String type;
   final String? attributedMemberId;
+  final String? localAttachmentPath;
+  final bool isDeleted;
 
   ExpenseModel({
     required this.id,
@@ -36,6 +38,8 @@ class ExpenseModel {
     required this.category,
     required this.type,
     this.attributedMemberId,
+    this.localAttachmentPath,
+    this.isDeleted = false,
   });
 
   /// Convert to Domain Entity
@@ -54,6 +58,8 @@ class ExpenseModel {
       category: category,
       type: type,
       attributedMemberId: attributedMemberId,
+      localAttachmentPath: localAttachmentPath,
+      isDeleted: isDeleted,
     );
   }
 
@@ -73,6 +79,8 @@ class ExpenseModel {
       category: expense.category,
       type: expense.type,
       attributedMemberId: expense.attributedMemberId,
+      localAttachmentPath: expense.localAttachmentPath,
+      isDeleted: expense.isDeleted,
     );
   }
 
@@ -92,6 +100,8 @@ class ExpenseModel {
       FirebaseConstants.expenseCategoryField: category,
       FirebaseConstants.expenseTypeField: type,
       if (attributedMemberId != null) FirebaseConstants.expenseMemberIdField: attributedMemberId,
+      if (localAttachmentPath != null) 'localAttachmentPath': localAttachmentPath,
+      'isDeleted': isDeleted,
     };
   }
 
@@ -123,6 +133,8 @@ class ExpenseModel {
       category: data[FirebaseConstants.expenseCategoryField] as String? ?? 'Other',
       type: data[FirebaseConstants.expenseTypeField] as String? ?? 'group',
       attributedMemberId: data[FirebaseConstants.expenseMemberIdField] as String?,
+      localAttachmentPath: data['localAttachmentPath'] as String?,
+      isDeleted: data['isDeleted'] as bool? ?? false,
     );
   }
 }

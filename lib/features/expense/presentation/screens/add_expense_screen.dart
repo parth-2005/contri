@@ -8,7 +8,6 @@ import 'package:intl/intl.dart';
 import '../providers/expense_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../auth/presentation/providers/member_provider.dart';
-import '../../../dashboard/presentation/providers/group_providers.dart';
 import '../../../dashboard/domain/entities/group.dart';
 import '../../domain/entities/expense.dart';
 import '../../../../core/utils/currency_formatter.dart';
@@ -60,15 +59,53 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     {'name': 'Utilities', 'icon': Icons.bolt},
     {'name': 'Other', 'icon': Icons.more_horiz},
   ];
+  
+  // Smart Description Parsing: Keyword map for auto-category selection
+  static const Map<String, List<String>> _categoryKeywords = {
+    'Travel': ['uber', 'ola', 'rapido', 'taxi', 'cab', 'flight', 'train', 'bus'],
+    'Dine-out': ['zomato', 'swiggy', 'tea', 'coffee', 'restaurant', 'food', 'dinner', 'lunch', 'breakfast'],
+    'Grocery': ['supermarket', 'dmart', 'reliance', 'fresh', 'vegetables', 'fruits'],
+    'Fuel': ['petrol', 'diesel', 'gas', 'fuel'],
+    'Entertainment': ['movie', 'cinema', 'netflix', 'prime', 'spotify', 'game'],
+    'Healthcare': ['pharmacy', 'medicine', 'doctor', 'hospital', 'clinic'],
+    'Utilities': ['electricity', 'water', 'internet', 'wifi', 'mobile', 'recharge'],
+  };
 
   bool get _isPersonalOrFamily => widget.group == null;
   bool get _isGroupExpense => widget.group != null;
+  
+  /// Smart Description Parsing: Auto-select category based on keywords
+  void _onDescriptionChanged() {
+    final description = _descriptionController.text.toLowerCase().trim();
+    if (description.isEmpty) return;
+    
+    // Check each category's keywords
+    for (final entry in _categoryKeywords.entries) {
+      final category = entry.key;
+      final keywords = entry.value;
+      
+      // If any keyword matches, auto-select that category
+      for (final keyword in keywords) {
+        if (description.contains(keyword)) {
+          if (_selectedCategory != category) {
+            setState(() {
+              _selectedCategory = category;
+            });
+          }
+          return; // Stop after first match
+        }
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     final authState = ref.read(authStateProvider);
     final currentUser = authState.value;
+
+    // Smart Description Parsing: Listen to description changes
+    _descriptionController.addListener(_onDescriptionChanged);
 
     // Initialize for group expenses
     if (widget.group != null) {
@@ -134,8 +171,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   /// Detect which split type was used for an expense
   SplitType _detectSplitType(Expense expense) {
-    if (widget.group == null)
+    if (widget.group == null) {
       return SplitType.equal; // Fallback for personal expenses
+    }
 
     final amount = expense.amount;
     final splitMap = expense.split;
@@ -209,6 +247,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   @override
   void dispose() {
+    _descriptionController.removeListener(_onDescriptionChanged);
     _descriptionController.dispose();
     _amountController.dispose();
     super.dispose();
@@ -217,6 +256,55 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   double _parseAmountText(String value) {
     final sanitized = value.replaceAll(',', '');
     return double.tryParse(sanitized) ?? 0.0;
+  }
+  
+  /// Sticky Date Feature: Ask if user wants to add another expense
+  void _showAddAnotherDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Expense Added!',
+          style: GoogleFonts.lato(fontWeight: FontWeight.bold),
+        ),
+        content: const Text('Do you want to add another expense?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close expense screen
+            },
+            child: const Text('No, Done'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              // Reset form but keep date and category for batch entry
+              _resetFormForBatchEntry();
+            },
+            child: const Text('Add Another'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// Reset form fields but preserve date for batch entry (Sticky Date)
+  void _resetFormForBatchEntry() {
+    setState(() {
+      _descriptionController.clear();
+      _amountController.clear();
+      // Keep _selectedDate unchanged (Sticky Date)
+      // Keep _selectedCategory unchanged (helps with similar expenses)
+      // Reset split fields for group expenses
+      if (_isGroupExpense) {
+        _splitType = SplitType.equal;
+        for (final memberId in widget.group!.members) {
+          _customSplits[memberId] = 0.0;
+          _memberShares[memberId] = widget.group!.defaultShares[memberId] ?? 1;
+        }
+      }
+    });
   }
 
   double _parseAmount() => _parseAmountText(_amountController.text);
@@ -277,8 +365,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   }
 
   Map<String, double> _calculateSplitMap() {
-    if (widget.group == null)
+    if (widget.group == null) {
       return {}; // Should not be called for personal expenses
+    }
 
     final amount = _parseAmount();
     final Map<String, double> splitMap = {};
@@ -357,10 +446,14 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   Future<void> _addExpense() async {
     final amountValue = _parseAmount();
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     // Only validate split for group expenses
-    if (_isGroupExpense && !_validateSplit()) return;
+    if (_isGroupExpense && !_validateSplit()) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -422,7 +515,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           date: _selectedDate,
         );
         if (mounted) {
-          Navigator.pop(context);
+          // Sticky Date: Show dialog asking if user wants to add another expense
+          _showAddAnotherDialog();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Expense added successfully!')),
           );

@@ -265,6 +265,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     return _firestore
         .collection(FirebaseConstants.expensesCollection)
         .where(FirebaseConstants.expenseGroupIdField, isEqualTo: groupId)
+        .where('isDeleted', isEqualTo: false) // Filter out soft-deleted expenses
         .orderBy(FirebaseConstants.expenseDateField, descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs
@@ -273,7 +274,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
   }
 
   /// Fetch filtered expenses across all contexts
-  /// Performs date-based query on Firestore and applies other filters in-memory
+  /// Uses Firestore queries for category and type to reduce data transfer
+  /// Note: Composite indexes required in Firebase Console for complex queries
   @override
   Stream<List<Expense>> getFilteredExpenses({
     DateTime? startDate,
@@ -282,10 +284,20 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     String? memberId,
     String? type,
   }) {
-    // Build Firestore query with date filter to reduce data transfer
+    // Build Firestore query with filters pushed to server
     Query query = _firestore
         .collection(FirebaseConstants.expensesCollection)
-        .orderBy(FirebaseConstants.expenseDateField, descending: true);
+        .where('isDeleted', isEqualTo: false); // Always filter out soft-deleted expenses
+
+    // Apply category filter at query level (Firestore does the work)
+    if (category != null && category.isNotEmpty) {
+      query = query.where(FirebaseConstants.expenseCategoryField, isEqualTo: category);
+    }
+
+    // Apply type filter at query level (Firestore does the work)
+    if (type != null && type.isNotEmpty) {
+      query = query.where(FirebaseConstants.expenseTypeField, isEqualTo: type);
+    }
 
     // Apply date range filters if provided
     if (startDate != null) {
@@ -301,27 +313,20 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       );
     }
 
-    // Stream and apply in-memory filters for category, member, and type
+    // Order by date
+    query = query.orderBy(FirebaseConstants.expenseDateField, descending: true);
+
+    // Stream and apply in-memory filter only for member (complex logic)
     return query.snapshots().map((snapshot) {
       var expenses = snapshot.docs
           .map((doc) => ExpenseModel.fromFirestore(doc).toEntity())
           .toList();
 
-      // Apply category filter
-      if (category != null && category.isNotEmpty) {
-        expenses = expenses.where((e) => e.category == category).toList();
-      }
-
-      // Apply member filter
+      // Apply member filter (requires checking multiple fields)
       if (memberId != null && memberId.isNotEmpty) {
         expenses = expenses
             .where((e) => e.attributedMemberId == memberId || e.paidBy == memberId)
             .toList();
-      }
-
-      // Apply type filter
-      if (type != null && type.isNotEmpty) {
-        expenses = expenses.where((e) => e.type == type).toList();
       }
 
       return expenses;
@@ -330,6 +335,7 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
 
   @override
   Future<void> deleteExpense(String expenseId) async {
+    // SOFT DELETE: Mark as deleted instead of removing (audit trail for financial data)
     // Fetch expense to calculate reversal
     final expenseDoc = await _firestore
         .collection(FirebaseConstants.expensesCollection)
@@ -354,11 +360,11 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       }
     });
 
-    // Atomic batch to delete expense and revert balances
+    // Atomic batch to soft-delete expense and revert balances
     final batch = _firestore.batch();
 
-    // 1. Delete expense
-    batch.delete(expenseDoc.reference);
+    // 1. Soft delete expense (set isDeleted = true instead of hard delete)
+    batch.update(expenseDoc.reference, {'isDeleted': true});
 
     // 2. Revert group balances and totalExpense ONLY for group expenses
     if (expense.groupId != null && expense.type != 'personal') {
@@ -385,6 +391,8 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
   /// Record a payment - creates a reverse expense to reduce debt
   /// When user A pays user B some amount towards settlement,
   /// we create an expense where A paid B that amount
+  /// 
+  /// TRUST SCORE TRACKING: Silently calculates settlement time metrics
   @override
   Future<void> recordPayment({
     required String groupId,
@@ -420,6 +428,9 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
       toUserId: -amount,
     };
 
+    // **TRUST SCORE TRACKING: Calculate settlement time**
+    await _updateTrustScoreForPayment(groupId, fromUserId, now);
+
     // Atomic batch update
     final batch = _firestore.batch();
 
@@ -442,6 +453,79 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
     });
 
     await batch.commit();
+  }
+  
+  /// **SHADOW ANALYTICS: Update Trust Score for payment (not shown in UI)**
+  /// Calculate settlement time and update rolling average
+  Future<void> _updateTrustScoreForPayment(
+    String groupId,
+    String userId,
+    DateTime paymentDate,
+  ) async {
+    try {
+      // Find the most recent expense where this user owes money
+      final recentExpensesSnapshot = await _firestore
+          .collection(FirebaseConstants.expensesCollection)
+          .where(FirebaseConstants.expenseGroupIdField, isEqualTo: groupId)
+          .where('isDeleted', isEqualTo: false)
+          .orderBy(FirebaseConstants.expenseDateField, descending: true)
+          .limit(50)
+          .get();
+      
+      // Find an expense where user is in split (owes money)
+      Expense? relevantExpense;
+      for (final doc in recentExpensesSnapshot.docs) {
+        final expense = ExpenseModel.fromFirestore(doc).toEntity();
+        if (expense.split.containsKey(userId) && expense.paidBy != userId) {
+          relevantExpense = expense;
+          break;
+        }
+      }
+      
+      if (relevantExpense == null) return; // No relevant expense found
+      
+      // Calculate settlement time in hours
+      final settlementTime = paymentDate.difference(relevantExpense.date).inHours.toDouble();
+      
+      // Get or create member stats document
+      final statsRef = _firestore
+          .collection('groups')
+          .doc(groupId)
+          .collection('memberStats')
+          .doc(userId);
+      
+      final statsDoc = await statsRef.get();
+      
+      if (statsDoc.exists) {
+        // Update existing stats with rolling average
+        final data = statsDoc.data() as Map<String, dynamic>;
+        final currentAvg = (data['avgSettlementTimeHours'] as num?)?.toDouble() ?? 0.0;
+        final currentTotal = (data['totalSettlements'] as num?)?.toInt() ?? 0;
+        
+        // Calculate new rolling average
+        final newAvg = ((currentAvg * currentTotal) + settlementTime) / (currentTotal + 1);
+        
+        await statsRef.update({
+          'avgSettlementTimeHours': newAvg,
+          'totalSettlements': currentTotal + 1,
+          'lastSettlementDate': Timestamp.fromDate(paymentDate),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Create new stats document
+        await statsRef.set({
+          'userId': userId,
+          'groupId': groupId,
+          'avgSettlementTimeHours': settlementTime,
+          'totalSettlements': 1,
+          'lastSettlementDate': Timestamp.fromDate(paymentDate),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      // Silently fail - trust score is non-critical
+      // Note: Trust score tracking is shadow analytics, failures are non-blocking
+    }
   }
   
   /// **NEW METHOD: Get Personal Expenses**

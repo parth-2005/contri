@@ -59,6 +59,14 @@ class Expense extends Equatable {
   /// Attributed Member: Which family member this expense belongs to
   /// Used for per-member spending analytics in family groups
   final String? attributedMemberId;
+  
+  /// Local Attachment Path: Store receipt images locally (no cloud costs)
+  /// Path to locally saved receipt image file
+  final String? localAttachmentPath;
+  
+  /// Soft Delete Flag: Audit trail for financial data (never actually delete)
+  /// Default: false. When true, expense is hidden from queries but preserved
+  final bool isDeleted;
 
   const Expense({
     required this.id,
@@ -74,6 +82,8 @@ class Expense extends Equatable {
     required this.category,
     required this.type,
     this.attributedMemberId,
+    this.localAttachmentPath,
+    this.isDeleted = false,
   });
   
   /// Check if this is a personal expense
@@ -101,8 +111,12 @@ class Expense extends Equatable {
         split,
         splitType,
         familyShares,
-        date,        createdAt,        category,
+        date,
+        createdAt,
+        category,
         type,
         attributedMemberId,
+        localAttachmentPath,
+        isDeleted,
       ];
 }
