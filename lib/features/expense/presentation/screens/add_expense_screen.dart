@@ -42,11 +42,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       {}; // {userId: shareCount} for family split
   bool _isLoading = false;
 
-  // Personal/Family expense fields
-  String _expenseType = 'personal'; // 'personal', 'family', 'group'
+  // Personal expense fields
   String _selectedCategory = 'Other';
-  String? _selectedGroupId;
-  String? _selectedMemberId; // For family expenses
+  String? _selectedMemberId; // Optional attribution (e.g., for family member)
 
   // Predefined categories
   static const List<Map<String, dynamic>> _categories = [
@@ -83,9 +81,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     // If editing, populate fields with existing expense data
     if (widget.expenseToEdit != null) {
       final expense = widget.expenseToEdit!;
-      _expenseType = expense.type;
       _selectedCategory = expense.category;
-      _selectedGroupId = expense.groupId;
       _selectedMemberId = expense.attributedMemberId;
       _descriptionController.text = expense.description;
       _amountController.text = _formatAmount(expense.amount.toStringAsFixed(2));
@@ -133,7 +129,6 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     } else {
       _paidBy =
           currentUser?.id ?? (widget.group?.members.first ?? currentUser?.id);
-      _expenseType = widget.group != null ? 'group' : 'personal';
     }
   }
 
@@ -374,17 +369,18 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       final authState = ref.read(authStateProvider);
       final currentUser = authState.value;
 
-      // For personal/family expenses: simple split (user pays and owes themselves)
+      // For personal expenses: simple split (user pays and owes themselves)
       // For group expenses: use calculated split map
       final splitMap = _isPersonalOrFamily
           ? {currentUser!.id: amountValue}
           : _calculateSplitMap();
 
-      // For personal/family: groupId is selected or null
+      // For personal: groupId is null
       // For group expenses: use widget.group.id
-      final groupId = _isPersonalOrFamily
-          ? (_expenseType == 'group' ? _selectedGroupId : null)
-          : widget.group!.id;
+      final groupId = _isPersonalOrFamily ? null : widget.group!.id;
+      
+      // Auto-determine expense type based on context
+      final expenseType = _isPersonalOrFamily ? 'personal' : 'group';
 
       final paidById = _isPersonalOrFamily ? currentUser!.id : _paidBy!;
 
@@ -400,7 +396,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           splitType: _isGroupExpense ? _splitTypeString() : null,
           familyShares: _isGroupExpense ? _familySharesForPersistence() : null,
           category: _selectedCategory,
-          type: _expenseType,
+          type: expenseType,
           attributedMemberId: _selectedMemberId,
           date: _selectedDate,
         );
@@ -421,7 +417,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           splitType: _isGroupExpense ? _splitTypeString() : null,
           familyShares: _isGroupExpense ? _familySharesForPersistence() : null,
           category: _selectedCategory,
-          type: _expenseType,
+          type: expenseType,
           attributedMemberId: _selectedMemberId,
           date: _selectedDate,
         );
@@ -451,9 +447,6 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     final membersAsync = _isGroupExpense
         ? ref.watch(memberProfilesProvider(widget.group!.members))
         : null;
-    final groupsAsync = _isPersonalOrFamily
-        ? ref.watch(userGroupsProvider)
-        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -466,41 +459,6 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Expense Type Selector (only for personal/family mode)
-            if (_isPersonalOrFamily) ...[
-              const Text(
-                'Expense Type',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: 'personal',
-                    label: Text('Personal'),
-                    icon: Icon(Icons.person),
-                  ),
-                  ButtonSegment(
-                    value: 'family',
-                    label: Text('Family'),
-                    icon: Icon(Icons.family_restroom),
-                  ),
-                  ButtonSegment(
-                    value: 'group',
-                    label: Text('Group'),
-                    icon: Icon(Icons.group),
-                  ),
-                ],
-                selected: {_expenseType},
-                onSelectionChanged: (Set<String> newSelection) {
-                  setState(() {
-                    _expenseType = newSelection.first;
-                  });
-                },
-              ),
-              const SizedBox(height: 24),
-            ],
-
             // Amount (calculator display)
             Column(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -709,46 +667,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               const SizedBox(height: 20),
             ],
 
-            // Group Selector (for personal mode when type is 'group')
-            if (_isPersonalOrFamily && _expenseType == 'group') ...[
-              if (groupsAsync != null)
-                groupsAsync.when(
-                  data: (groups) {
-                    if (groups.isEmpty) {
-                      return const Text(
-                        'No groups available. Create a group first.',
-                        style: TextStyle(color: Colors.orange),
-                      );
-                    }
-                    return DropdownButtonFormField<String>(
-                      value: _selectedGroupId,
-                      decoration: const InputDecoration(
-                        labelText: 'Select Group',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.group),
-                      ),
-                      items: groups
-                          .map(
-                            (group) => DropdownMenuItem(
-                              value: group.id,
-                              child: Text(group.name),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _selectedGroupId = value),
-                      validator: (value) =>
-                          value == null ? 'Please select a group' : null,
-                    );
-                  },
-                  loading: () => const CircularProgressIndicator(),
-                  error: (error, _) => Text('Error: $error'),
-                ),
-              const SizedBox(height: 20),
-            ],
-
-            // Member Selector (for family expenses in personal mode)
-            if (_isPersonalOrFamily && _expenseType == 'family') ...[
+            // Member Attribution (optional - for personal expenses)
+            if (_isPersonalOrFamily) ...[
               const Text(
                 'Attributed To (Optional)',
                 style: TextStyle(fontSize: 14, color: Colors.grey),
