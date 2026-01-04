@@ -35,6 +35,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   // Calendar states
   late DateTime _focusedDay;
   late DateTime _selectedCalendarDate;
+  CalendarFormat _calendarFormat = CalendarFormat.month;
   
   // Month caching: {monthKey: expenses}
   // monthKey format: "2026-01" (YYYY-MM)
@@ -313,75 +314,104 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     return Column(
       children: [
-        // TableCalendar
+        // TableCalendar with Swipe Gesture Support
         Padding(
           padding: const EdgeInsets.all(16),
           child: Stack(
             children: [
-              TableCalendar(
-                firstDay: DateTime(2020),
-                lastDay: DateTime.now(),
-                focusedDay: _focusedDay,
-                selectedDayPredicate: (day) {
-                  return isSameDay(_selectedCalendarDate, day);
+              GestureDetector(
+                onVerticalDragEnd: (details) {
+                  // Swipe up: negative velocity -> switch to week view
+                  // Swipe down: positive velocity -> switch to month view
+                  if (details.primaryVelocity != null) {
+                    if (details.primaryVelocity! < -500 && _calendarFormat == CalendarFormat.month) {
+                      // Swipe up detected, switch to week view
+                      setState(() {
+                        _calendarFormat = CalendarFormat.week;
+                      });
+                    } else if (details.primaryVelocity! > 500 && _calendarFormat == CalendarFormat.week) {
+                      // Swipe down detected, switch to month view
+                      setState(() {
+                        _calendarFormat = CalendarFormat.month;
+                      });
+                    }
+                  }
                 },
-                onDaySelected: (selectedDay, focusedDay) {
-                  setState(() {
-                    _selectedCalendarDate = selectedDay;
-                    _focusedDay = focusedDay;
-                  });
-                },
-                onPageChanged: (focusedDay) {
-                  setState(() {
-                    _focusedDay = focusedDay;
-                  });
-                  // Trigger loading of new month (will use cache if available)
-                },
-                calendarFormat: CalendarFormat.month,
-                startingDayOfWeek: StartingDayOfWeek.monday,
-                eventLoader: (day) {
-                  return _getExpensesForDate(allExpenses, day);
-                },
-                headerStyle: HeaderStyle(
-                  formatButtonDecoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(8),
+                child: TableCalendar(
+                  firstDay: DateTime(2020),
+                  lastDay: DateTime.now(),
+                  focusedDay: _focusedDay,
+                  selectedDayPredicate: (day) {
+                    return isSameDay(_selectedCalendarDate, day);
+                  },
+                  onDaySelected: (selectedDay, focusedDay) {
+                    setState(() {
+                      _selectedCalendarDate = selectedDay;
+                      _focusedDay = focusedDay;
+                      // Do NOT auto-switch format on date selection (UX improvement)
+                    });
+                  },
+                  onPageChanged: (focusedDay) {
+                    setState(() {
+                      _focusedDay = focusedDay;
+                    });
+                    // Trigger loading of new month (will use cache if available)
+                  },
+                  calendarFormat: _calendarFormat,
+                  availableCalendarFormats: const {
+                    CalendarFormat.month: 'Month',
+                    CalendarFormat.week: 'Week',
+                  },
+                  onFormatChanged: (format) {
+                    setState(() {
+                      _calendarFormat = format;
+                    });
+                  },
+                  startingDayOfWeek: StartingDayOfWeek.monday,
+                  eventLoader: (day) {
+                    return _getExpensesForDate(allExpenses, day);
+                  },
+                  headerStyle: HeaderStyle(
+                    formatButtonDecoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    formatButtonTextStyle: GoogleFonts.lato(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    titleCentered: true,
+                    titleTextStyle: GoogleFonts.lato(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  formatButtonTextStyle: GoogleFonts.lato(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+                  daysOfWeekStyle: DaysOfWeekStyle(
+                    weekdayStyle: GoogleFonts.lato(fontWeight: FontWeight.w500),
+                    weekendStyle: GoogleFonts.lato(
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
-                  titleCentered: true,
-                  titleTextStyle: GoogleFonts.lato(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                  calendarStyle: CalendarStyle(
+                    selectedDecoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    todayDecoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    markerDecoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    markersMaxCount: 1,
+                    cellMargin: const EdgeInsets.all(4),
+                    cellPadding: const EdgeInsets.all(8),
                   ),
+                  rowHeight: 60,
                 ),
-                daysOfWeekStyle: DaysOfWeekStyle(
-                  weekdayStyle: GoogleFonts.lato(fontWeight: FontWeight.w500),
-                  weekendStyle: GoogleFonts.lato(
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                calendarStyle: CalendarStyle(
-                  selectedDecoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  todayDecoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                    shape: BoxShape.circle,
-                  ),
-                  markerDecoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  markersMaxCount: 1,
-                  cellMargin: const EdgeInsets.all(4),
-                  cellPadding: const EdgeInsets.all(8),
-                ),
-                rowHeight: 60,
               ),
               // Loading overlay for month
               if (isLoading)

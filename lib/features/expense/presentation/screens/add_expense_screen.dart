@@ -1,4 +1,5 @@
-﻿import 'dart:math';
+﻿import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,23 @@ import '../../../dashboard/domain/entities/group.dart';
 import '../../domain/entities/expense.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/money_utils.dart';
+
+/// Debouncer utility to prevent excessive state updates during typing
+class Debouncer {
+  final int milliseconds;
+  Timer? _timer;
+
+  Debouncer({required this.milliseconds});
+
+  void run(VoidCallback action) {
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: milliseconds), action);
+  }
+
+  void dispose() {
+    _timer?.cancel();
+  }
+}
 
 enum SplitType { equal, custom, family }
 
@@ -46,6 +64,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   String _selectedCategory = 'Other';
   String? _selectedMemberId; // Optional attribution (e.g., for family member)
 
+  // Debouncer for smooth typing experience
+  late final Debouncer _debouncer;
+
   // Predefined categories
   static const List<Map<String, dynamic>> _categories = [
     {'name': 'Grocery', 'icon': Icons.shopping_cart},
@@ -77,26 +98,29 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   
   /// Smart Description Parsing: Auto-select category based on keywords
   void _onDescriptionChanged() {
-    final description = _descriptionController.text.toLowerCase().trim();
-    if (description.isEmpty) return;
-    
-    // Check each category's keywords
-    for (final entry in _categoryKeywords.entries) {
-      final category = entry.key;
-      final keywords = entry.value;
+    // Debounce to prevent excessive setState calls during typing
+    _debouncer.run(() {
+      final description = _descriptionController.text.toLowerCase().trim();
+      if (description.isEmpty) return;
       
-      // If any keyword matches, auto-select that category
-      for (final keyword in keywords) {
-        if (description.contains(keyword)) {
-          if (_selectedCategory != category) {
-            setState(() {
-              _selectedCategory = category;
-            });
+      // Check each category's keywords
+      for (final entry in _categoryKeywords.entries) {
+        final category = entry.key;
+        final keywords = entry.value;
+        
+        // If any keyword matches, auto-select that category
+        for (final keyword in keywords) {
+          if (description.contains(keyword)) {
+            if (_selectedCategory != category) {
+              setState(() {
+                _selectedCategory = category;
+              });
+            }
+            return; // Stop after first match
           }
-          return; // Stop after first match
         }
       }
-    }
+    });
   }
 
   @override
@@ -104,6 +128,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     super.initState();
     final authState = ref.read(authStateProvider);
     final currentUser = authState.value;
+
+    // Initialize debouncer for smooth typing
+    _debouncer = Debouncer(milliseconds: 300);
 
     // Smart Description Parsing: Listen to description changes
     _descriptionController.addListener(_onDescriptionChanged);
@@ -265,6 +292,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   @override
   void dispose() {
+    _debouncer.dispose();
     _descriptionController.removeListener(_onDescriptionChanged);
     _descriptionController.dispose();
     _amountController.dispose();
@@ -363,6 +391,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       return;
     }
 
+    // Update text immediately for responsive UI
     final formatted = _formatAmount(value);
     if (formatted != value) {
       _amountController.value = TextEditingValue(
@@ -370,7 +399,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         selection: TextSelection.collapsed(offset: formatted.length),
       );
     }
-    setState(() {});
+    
+    // Debounce heavy operations (split calculations) for smooth typing
+    _debouncer.run(() {
+      if (mounted) {
+        setState(() {
+          // This triggers recalculation of splits if in equal/family mode
+        });
+      }
+    });
   }
 
   /// Calculate total from custom splits
