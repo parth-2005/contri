@@ -11,6 +11,7 @@ import '../../../auth/presentation/providers/member_provider.dart';
 import '../../../dashboard/domain/entities/group.dart';
 import '../../domain/entities/expense.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/utils/money_utils.dart';
 
 enum SplitType { equal, custom, family }
 
@@ -395,15 +396,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
     switch (_splitType) {
       case SplitType.equal:
-        // Audit 2: Division safety - prevent division by zero
-        // Audit 3: Null safety - safe access with null check
+        // Use MoneyUtils to handle the "extra penny" problem (e.g., 100/3 = 33.33 + 33.33 + 33.34)
+        // This ensures the sum of splits EXACTLY equals the total amount
         final group = widget.group;
         if (group == null || group.members.isEmpty) {
           break;
         }
-        final perPerson = amount / group.members.length;
-        for (final memberId in group.members) {
-          splitMap[memberId] = double.parse(perPerson.toStringAsFixed(2));
+        final splits = MoneyUtils.distributeEqually(amount, group.members.length);
+        for (int i = 0; i < group.members.length; i++) {
+          splitMap[group.members[i]] = splits[i];
         }
         break;
 
@@ -412,22 +413,20 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         break;
 
       case SplitType.family:
-        // Split based on family shares (defaultShares) - supports decimals (0.5 for child, 1 for adult)
-        // Audit 2: Division safety - prevent division by zero
-        final totalShares = _memberShares.values.fold<double>(
-          0.0,
-          (sum, val) => sum + val,
-        );
-        // Audit 3: Null safety - safe access with null check
+        // Use MoneyUtils to handle proportional splits with rounding error correction
+        // This ensures the sum of splits EXACTLY equals the total amount
         final group = widget.group;
-        if (totalShares > 0 && group != null) {
-          for (final memberId in group.members) {
-            final shareCount = _memberShares[memberId] ?? 1.0;
-            splitMap[memberId] = double.parse(
-              ((amount * shareCount) / totalShares).toStringAsFixed(2),
-            );
-          }
+        if (group == null) break;
+        
+        // Build shares map for MoneyUtils
+        final sharesMap = <String, double>{};
+        for (final memberId in group.members) {
+          sharesMap[memberId] = _memberShares[memberId] ?? 1.0;
         }
+        
+        // MoneyUtils handles division by zero and rounding errors
+        final calculatedSplits = MoneyUtils.distributeByShares(amount, sharesMap);
+        splitMap.addAll(calculatedSplits);
         break;
     }
 
@@ -1003,15 +1002,12 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 onSelectionChanged: (Set<SplitType> newSelection) {
                   setState(() {
                     _splitType = newSelection.first;
-                    // Audit 3: Null safety - safe access
-                    // Audit 2: Division safety - check for empty members
+                    // Use MoneyUtils for equal split to ensure exact sum
                     final group = widget.group;
                     if (_splitType == SplitType.equal && amount > 0 && group != null && group.members.isNotEmpty) {
-                      final perPerson = amount / group.members.length;
-                      for (final memberId in group.members) {
-                        _customSplits[memberId] = double.parse(
-                          perPerson.toStringAsFixed(2),
-                        );
+                      final splits = MoneyUtils.distributeEqually(amount, group.members.length);
+                      for (int i = 0; i < group.members.length; i++) {
+                        _customSplits[group.members[i]] = splits[i];
                       }
                     }
                     // When switching to custom, clear amount field to be filled by custom splits
