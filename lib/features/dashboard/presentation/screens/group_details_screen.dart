@@ -708,6 +708,10 @@ class GroupDetailsScreen extends ConsumerWidget {
 
     final entries = paidByStats.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    // Audit 4: Protect against empty list access
+    if (entries.isEmpty) {
+      return const SizedBox.shrink();
+    }
     final maxValue = entries.first.value;
 
     return Card(
@@ -844,7 +848,8 @@ class GroupDetailsScreen extends ConsumerWidget {
     for (int i = 0; i < entries.length; i++) {
       final entry = entries[i];
       final total = categoryData.values.fold<double>(0.0, (sum, v) => sum + v);
-      final percentage = total > 0 ? (entry.value / total * 100) : 0;
+      // Audit 2: Division safety - prevent division by zero
+      final percentage = total > 0 ? (entry.value / total * 100) : 0.0;
 
       if (i > 0 && i % 7 == 0) {
         widgets.add(
@@ -1168,17 +1173,17 @@ class GroupDetailsScreen extends ConsumerWidget {
     try {
       final repository = ref.read(expenseRepositoryProvider);
       await repository.deleteExpense(expense.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Expense deleted')));
-      }
+      // Audit 5: Async safety - check mounted before using context
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Expense deleted')));
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to delete expense: $e')));
-      }
+      // Audit 5: Async safety - check mounted before using context
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete expense: $e')));
     }
   }
 
@@ -1289,18 +1294,18 @@ class GroupDetailsScreen extends ConsumerWidget {
     try {
       final repository = ref.read(groupRepositoryProvider);
       await repository.removeMemberFromGroup(group.id, currentUser.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You left the group')),
-        );
-        Navigator.of(context).pop();
-      }
+      // Audit 5: Async safety - check mounted before using context
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You left the group')),
+      );
+      Navigator.of(context).pop();
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to leave group: $e')));
-      }
+      // Audit 5: Async safety - check mounted before using context
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to leave group: $e')));
     }
   }
 
@@ -1435,23 +1440,23 @@ class GroupDetailsScreen extends ConsumerWidget {
         amount: paymentAmount,
       );
 
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Payment of ${CurrencyFormatter.format(paymentAmount)} recorded with $toName!',
-            ),
-            backgroundColor: Colors.green,
+      // Audit 5: Async safety - check mounted before using context
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Payment of ${CurrencyFormatter.format(paymentAmount)} recorded with $toName!',
           ),
-        );
-      }
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error recording payment: $e')));
-      }
+      // Audit 5: Async safety - check mounted before using context
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error recording payment: $e')));
     }
   }
 }

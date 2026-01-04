@@ -540,8 +540,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final daysPassed = now.day;
     final totalDaysInMonth =
         DateTime(now.year, now.month + 1, 0).day;
-    final dailyAvg = daysPassed > 0 ? (currentTotal / daysPassed) : 0.0;
-    final projectedTotal = dailyAvg * totalDaysInMonth;
+    // Audit 2: Division safety - ensure daysPassed > 0 to avoid division by zero
+    final dailyAvg = (daysPassed > 0 && currentTotal >= 0) ? (currentTotal / daysPassed) : 0.0;
+    // Audit 2: Protect against NaN/Infinity
+    final projectedTotal = dailyAvg.isFinite ? (dailyAvg * totalDaysInMonth) : 0.0;
 
     // Get previous month total for comparison (using current user context)
     final authState = ref.watch(authStateProvider);
@@ -824,7 +826,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   /// Pulse Check Card: Compare with previous period
   Widget _buildPulseCheckCard(double currentTotal, double previousTotal) {
     final difference = currentTotal - previousTotal;
-    final percentageChange = previousTotal > 0
+    // Audit 2: Division safety - prevent division by zero and handle edge case
+    final percentageChange = (previousTotal > 0 && difference.abs() > 0)
         ? (difference / previousTotal * 100)
         : 0.0;
     final isLess = difference < 0;
@@ -978,7 +981,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     for (int i = 0; i < entries.length; i++) {
       final entry = entries[i];
-      final percentage = (entry.value / totalAmount * 100);
+      // Audit 2: Division safety - prevent division by zero
+      final percentage = totalAmount > 0 ? (entry.value / totalAmount * 100) : 0.0;
 
       if (i > 0 && i % 7 == 0) {
         widgets.add(_buildAdPlaceholder());
@@ -1060,7 +1064,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     double total,
   ) {
     return categoryData.entries.map((entry) {
-      final percentage = (entry.value / total * 100);
+      // Audit 2: Division safety - prevent division by zero
+      final percentage = total > 0 ? (entry.value / total * 100) : 0.0;
       return PieChartSectionData(
         value: entry.value,
         title: '${percentage.toStringAsFixed(0)}%',

@@ -108,10 +108,12 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     _descriptionController.addListener(_onDescriptionChanged);
 
     // Initialize for group expenses
-    if (widget.group != null) {
-      for (final memberId in widget.group!.members) {
+    // Audit 3: Null safety - safe access instead of force unwrap
+    final group = widget.group;
+    if (group != null) {
+      for (final memberId in group.members) {
         _customSplits[memberId] = 0.0;
-        _memberShares[memberId] = widget.group!.defaultShares[memberId] ?? 1;
+        _memberShares[memberId] = group.defaultShares[memberId] ?? 1;
       }
     }
 
@@ -130,8 +132,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         _customSplits.addAll(expense.split);
 
         // Prefer stored splitType/familyShares when available
-        if (widget.expenseToEdit!.splitType != null) {
-          switch (widget.expenseToEdit!.splitType) {
+        // Audit 3: Null safety - safe null check
+        final expenseSplitType = expense.splitType;
+        if (expenseSplitType != null) {
+          switch (expenseSplitType) {
             case 'equal':
               _splitType = SplitType.equal;
               break;
@@ -145,20 +149,21 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           }
         } else {
           // Fallback: detect split type
-          _splitType = _detectSplitType(widget.expenseToEdit!);
+          _splitType = _detectSplitType(expense);
         }
 
         // Populate member shares if stored, else reverse-engineer
         if (_splitType == SplitType.family) {
-          if (widget.expenseToEdit!.familyShares != null &&
-              widget.expenseToEdit!.familyShares!.isNotEmpty) {
+          // Audit 3: Null safety - safe null check
+          final familyShares = expense.familyShares;
+          if (familyShares != null && familyShares.isNotEmpty) {
             _memberShares
               ..clear()
-              ..addAll(widget.expenseToEdit!.familyShares!);
+              ..addAll(familyShares);
           } else {
             _calculateMemberSharesFromSplitMap(
-              widget.expenseToEdit!.amount,
-              widget.expenseToEdit!.split,
+              expense.amount,
+              expense.split,
             );
           }
         }
@@ -171,7 +176,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
   /// Detect which split type was used for an expense
   SplitType _detectSplitType(Expense expense) {
-    if (widget.group == null) {
+    // Audit 3: Null safety - safe access with early return
+    final group = widget.group;
+    if (group == null) {
       return SplitType.equal; // Fallback for personal expenses
     }
 
@@ -179,7 +186,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     final splitMap = expense.split;
 
     // Check if it's an equal split
-    final memberCount = widget.group!.members.length;
+    final memberCount = group.members.length;
+    // Audit 2: Division safety - prevent division by zero
+    if (memberCount == 0) {
+      return SplitType.equal;
+    }
     final equalAmount = amount / memberCount;
     final isEqual = splitMap.values.every(
       (split) => (split - equalAmount).abs() < 0.01,
@@ -187,16 +198,19 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     if (isEqual) return SplitType.equal;
 
     // Check if it's a family split (proportional to default shares)
-    final totalDefaultShares = widget.group!.defaultShares.values.fold<double>(
+    // Audit 3: Null safety - safe access
+    final totalDefaultShares = group.defaultShares.values.fold<double>(
       0.0,
       (sum, share) => sum + share,
     );
 
+    // Audit 2: Division safety - prevent division by zero
     if (totalDefaultShares > 0) {
       final isFamilySplit = splitMap.entries.every((entry) {
         final memberId = entry.key;
         final actualSplit = entry.value;
-        final defaultShare = widget.group!.defaultShares[memberId] ?? 1.0;
+        // Audit 3: Null safety - safe access
+        final defaultShare = group.defaultShares[memberId] ?? 1.0;
         final expectedSplit = (amount * defaultShare) / totalDefaultShares;
         return (actualSplit - expectedSplit).abs() < 0.01;
       });
@@ -213,6 +227,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     double amount,
     Map<String, double> splitMap,
   ) {
+    // Audit 2: Division safety - prevent division by zero
     if (amount == 0) return;
 
     // Find the total of all splits
@@ -220,6 +235,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       0.0,
       (sum, val) => sum + val,
     );
+    // Audit 2: Division safety - prevent division by zero
     if (totalSplit == 0) return;
 
     // Calculate what share each member must have had
@@ -233,6 +249,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
     // Find minimum split (this will be our base unit)
     final minSplit = splits.map((e) => e.value).reduce((a, b) => a < b ? a : b);
+    // Audit 2: Division safety - prevent division by zero
     if (minSplit == 0) return;
 
     // Calculate shares relative to minimum
@@ -299,9 +316,13 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       // Reset split fields for group expenses
       if (_isGroupExpense) {
         _splitType = SplitType.equal;
-        for (final memberId in widget.group!.members) {
-          _customSplits[memberId] = 0.0;
-          _memberShares[memberId] = widget.group!.defaultShares[memberId] ?? 1;
+        // Audit 3: Null safety - safe access
+        final group = widget.group;
+        if (group != null) {
+          for (final memberId in group.members) {
+            _customSplits[memberId] = 0.0;
+            _memberShares[memberId] = group.defaultShares[memberId] ?? 1;
+          }
         }
       }
     });
@@ -374,8 +395,14 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
     switch (_splitType) {
       case SplitType.equal:
-        final perPerson = amount / widget.group!.members.length;
-        for (final memberId in widget.group!.members) {
+        // Audit 2: Division safety - prevent division by zero
+        // Audit 3: Null safety - safe access with null check
+        final group = widget.group;
+        if (group == null || group.members.isEmpty) {
+          break;
+        }
+        final perPerson = amount / group.members.length;
+        for (final memberId in group.members) {
           splitMap[memberId] = double.parse(perPerson.toStringAsFixed(2));
         }
         break;
@@ -386,12 +413,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
       case SplitType.family:
         // Split based on family shares (defaultShares) - supports decimals (0.5 for child, 1 for adult)
+        // Audit 2: Division safety - prevent division by zero
         final totalShares = _memberShares.values.fold<double>(
           0.0,
           (sum, val) => sum + val,
         );
-        if (totalShares > 0) {
-          for (final memberId in widget.group!.members) {
+        // Audit 3: Null safety - safe access with null check
+        final group = widget.group;
+        if (totalShares > 0 && group != null) {
+          for (final memberId in group.members) {
             final shareCount = _memberShares[memberId] ?? 1.0;
             splitMap[memberId] = double.parse(
               ((amount * shareCount) / totalShares).toStringAsFixed(2),
@@ -464,24 +494,31 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
 
       // For personal expenses: simple split (user pays and owes themselves)
       // For group expenses: use calculated split map
+      // Audit 3: Null safety - safe null access
+      final currentUserId = currentUser?.id;
       final splitMap = _isPersonalOrFamily
-          ? {currentUser!.id: amountValue}
+          ? (currentUserId != null ? {currentUserId: amountValue} : <String, double>{})
           : _calculateSplitMap();
 
       // For personal: groupId is null
       // For group expenses: use widget.group.id
-      final groupId = _isPersonalOrFamily ? null : widget.group!.id;
+      final groupId = _isPersonalOrFamily ? null : widget.group?.id;
       
       // Auto-determine expense type based on context
       final expenseType = _isPersonalOrFamily ? 'personal' : 'group';
 
-      final paidById = _isPersonalOrFamily ? currentUser!.id : _paidBy!;
+      // Audit 3: Null safety - safe null access with fallback
+      final paidById = _isPersonalOrFamily 
+          ? (currentUserId ?? '') 
+          : (_paidBy ?? currentUserId ?? '');
 
       if (widget.expenseToEdit != null) {
         // Update existing expense
+        // Audit 3: Null safety - safe null access
+        final expenseId = widget.expenseToEdit!.id;
         await repository.updateExpense(
           groupId: groupId,
-          expenseId: widget.expenseToEdit!.id,
+          expenseId: expenseId,
           description: _descriptionController.text.trim(),
           amount: amountValue,
           paidBy: paidById,
@@ -493,12 +530,12 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           attributedMemberId: _selectedMemberId,
           date: _selectedDate,
         );
-        if (mounted) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Expense updated successfully!')),
-          );
-        }
+        // Audit 5: Async safety - check mounted before using context
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Expense updated successfully!')),
+        );
       } else {
         // Create new expense
         await repository.createExpense(
@@ -514,32 +551,34 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           attributedMemberId: _selectedMemberId,
           date: _selectedDate,
         );
-        if (mounted) {
-          // Sticky Date: Show dialog asking if user wants to add another expense
-          _showAddAnotherDialog();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Expense added successfully!')),
-          );
-        }
+        // Audit 5: Async safety - check mounted before using context
+        if (!mounted) return;
+        // Sticky Date: Show dialog asking if user wants to add another expense
+        _showAddAnotherDialog();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Expense added successfully!')),
+        );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+      // Audit 5: Async safety - check mounted before using context
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      // Audit 5: Async safety - check mounted before setState
+      if (!mounted) return;
+      setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final amount = _parseAmount();
-    final membersAsync = _isGroupExpense
-        ? ref.watch(memberProfilesProvider(widget.group!.members))
+    // Audit 3: Null safety - safe access instead of force unwrap
+    final group = widget.group;
+    final membersAsync = _isGroupExpense && group != null
+        ? ref.watch(memberProfilesProvider(group.members))
         : null;
 
     return Scaffold(
@@ -844,12 +883,15 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               if (membersAsync != null)
                 membersAsync.when(
                   data: (members) {
+                    // Audit 3: Null safety - safe access
+                    final group = widget.group;
+                    if (group == null) return const SizedBox.shrink();
                     return SizedBox(
                       height: 76,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemBuilder: (context, index) {
-                          final memberId = widget.group!.members[index];
+                          final memberId = group.members[index];
                           final memberName =
                               members[memberId]?.name ?? memberId;
                           final isSelected = _paidBy == memberId;
@@ -899,7 +941,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                           );
                         },
                         separatorBuilder: (_, idx) => const SizedBox(width: 10),
-                        itemCount: widget.group!.members.length,
+                        // Audit 3: Null safety - safe access
+                        itemCount: group.members.length,
                       ),
                     );
                   },
@@ -915,7 +958,8 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                   error: (_, err) => Wrap(
                     spacing: 8,
-                    children: widget.group!.members.map((memberId) {
+                    // Audit 3: Null safety - safe access with fallback
+                    children: (widget.group?.members ?? []).map((memberId) {
                       return ChoiceChip(
                         label: Text(
                           memberId,
@@ -959,9 +1003,12 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                 onSelectionChanged: (Set<SplitType> newSelection) {
                   setState(() {
                     _splitType = newSelection.first;
-                    if (_splitType == SplitType.equal && amount > 0) {
-                      final perPerson = amount / widget.group!.members.length;
-                      for (final memberId in widget.group!.members) {
+                    // Audit 3: Null safety - safe access
+                    // Audit 2: Division safety - check for empty members
+                    final group = widget.group;
+                    if (_splitType == SplitType.equal && amount > 0 && group != null && group.members.isNotEmpty) {
+                      final perPerson = amount / group.members.length;
+                      for (final memberId in group.members) {
                         _customSplits[memberId] = double.parse(
                           perPerson.toStringAsFixed(2),
                         );
@@ -980,6 +1027,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               if (membersAsync != null)
                 membersAsync.when(
                   data: (members) {
+                    // Audit 3: Null safety - safe access
+                    final group = widget.group;
+                    if (group == null) return const SizedBox.shrink();
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -1001,15 +1051,16 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                               ],
                             ),
                             const Divider(),
-                            ...widget.group!.members.map((memberId) {
+                            // Audit 3: Null safety - safe access to group members
+                            ...group.members.map((memberId) {
+                              // Audit 2: Division safety - check for empty members
                               final split = _splitType == SplitType.equal
-                                  ? amount / widget.group!.members.length
+                                  ? (group.members.isNotEmpty ? amount / group.members.length : 0.0)
                                   : _splitType == SplitType.family
                                   ? _calculateSplitMap()[memberId] ?? 0.0
                                   : _customSplits[memberId] ?? 0.0;
-                              final memberName = members.containsKey(memberId)
-                                  ? members[memberId]!.name
-                                  : memberId;
+                              // Audit 3: Null safety - safe access with fallback
+                              final memberName = members[memberId]?.name ?? memberId;
 
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1122,6 +1173,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                   ),
                 ),
                 error: (_, err) {
+                  // Audit 3: Null safety - safe access
+                  final group = widget.group;
+                  if (group == null) return const SizedBox.shrink();
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -1143,9 +1197,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                             ],
                           ),
                           const Divider(),
-                          ...widget.group!.members.map((memberId) {
+                          // Audit 3: Null safety - safe access to group members
+                          ...group.members.map((memberId) {
+                            // Audit 2: Division safety - check for empty members
                             final split = _splitType == SplitType.equal
-                                ? amount / widget.group!.members.length
+                                ? (group.members.isNotEmpty ? amount / group.members.length : 0.0)
                                 : _splitType == SplitType.family
                                 ? _calculateSplitMap()[memberId] ?? 0.0
                                 : _customSplits[memberId] ?? 0.0;
