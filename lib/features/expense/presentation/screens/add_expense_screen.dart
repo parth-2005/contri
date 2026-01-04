@@ -81,46 +81,71 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     {'name': 'Other', 'icon': Icons.more_horiz},
   ];
   
-  // Smart Description Parsing: Keyword map for auto-category selection
-  static const Map<String, List<String>> _categoryKeywords = {
-    'Travel': ['uber', 'ola', 'rapido', 'taxi', 'cab', 'flight', 'train', 'bus'],
-    'Dine-out': ['zomato', 'swiggy', 'tea', 'coffee', 'restaurant', 'food', 'dinner', 'lunch', 'breakfast'],
-    'Grocery': ['supermarket', 'dmart', 'reliance', 'fresh', 'vegetables', 'fruits'],
-    'Fuel': ['petrol', 'diesel', 'gas', 'fuel'],
-    'Entertainment': ['movie', 'cinema', 'netflix', 'prime', 'spotify', 'game'],
-    'Healthcare': ['pharmacy', 'medicine', 'doctor', 'hospital', 'clinic'],
-    'Utilities': ['electricity', 'water', 'internet', 'wifi', 'mobile', 'recharge'],
+  // ---------------------------------------------------------------------------
+  // ✅ SMART AUTO-CATEGORIZATION (REGEX ENGINE)
+  // ---------------------------------------------------------------------------
+
+  // Pre-compiled Regex patterns for O(1) performance.
+  // Tailored for diverse Indian transaction terms.
+  static final Map<String, RegExp> _categoryPatterns = {
+    'Travel': RegExp(
+      r'\b(uber|ola|rapido|taxi|cab|auto|rickshaw|metro|local|train|bus|flight|ticket|toll|fastag|parking|fuel|petrol|diesel|cng|yulu|bounce)\b', 
+      caseSensitive: false
+    ),
+    'Dine-out': RegExp(
+      r'\b(zomato|swiggy|restaurant|cafe|hotel|dinner|lunch|breakfast|food|tea|chai|coffee|sutta|bar|pub|beer|wine|alcohol|biryani|thali|dosa|pizza|burger|mcd|kfc|domino|starbucks|subway|theka)\b', 
+      caseSensitive: false
+    ),
+    'Grocery': RegExp(
+      r'\b(grocery|supermarket|dmart|reliance|fresh|blinkit|zepto|instamart|bigbasket|kirana|milk|doodh|curd|paneer|vegetables|sabzi|fruits|bread|eggs|meat|chicken|fish|market|store|biscuits|chips)\b', 
+      caseSensitive: false
+    ),
+    'Entertainment': RegExp(
+      r'\b(movie|cinema|pvr|inox|bookmyshow|netflix|prime|hotstar|sony|spotify|youtube|game|steam|playstation|xbox|fun|party|trip|club|concert|event)\b', 
+      caseSensitive: false
+    ),
+    'Healthcare': RegExp(
+      r'\b(pharmacy|medicine|meds|dawa|doctor|clinic|hospital|test|lab|consultation|dr|apollo|1mg|practo)\b', 
+      caseSensitive: false
+    ),
+    'Utilities': RegExp(
+      r'\b(electricity|water|gas|cylinder|internet|wifi|broadband|jio|airtel|vi|bsnl|recharge|mobile|dth|tatasky|bill|rent|maintenance|maid|cook)\b', 
+      caseSensitive: false
+    ),
+    'Shopping': RegExp(
+      r'\b(amazon|flipkart|myntra|ajio|meesho|nykaa|clothes|shoes|zara|h&m|mall|shop|bag|jeans|shirt)\b', 
+      caseSensitive: false
+    ),
+    'EMI': RegExp(
+      r'\b(emi|loan|interest|bank|credit|card|installment|premium|insurance|lic)\b', 
+      caseSensitive: false
+    ),
   };
 
   bool get _isPersonalOrFamily => widget.group == null;
   bool get _isGroupExpense => widget.group != null;
   
-  /// Smart Description Parsing: Auto-select category based on keywords
+  /// Smart Description Parsing: O(1) Lookup with Debounce
   void _onDescriptionChanged() {
-    // Debounce to prevent excessive setState calls during typing
+    // Debounce is still good to prevent UI flicker
     _debouncer.run(() {
-      final description = _descriptionController.text.toLowerCase().trim();
+      final description = _descriptionController.text.trim();
       if (description.isEmpty) return;
-      
-      // Check each category's keywords
-      for (final entry in _categoryKeywords.entries) {
-        final category = entry.key;
-        final keywords = entry.value;
-        
-        // If any keyword matches, auto-select that category
-        for (final keyword in keywords) {
-          if (description.contains(keyword)) {
-            if (_selectedCategory != category) {
-              setState(() {
-                _selectedCategory = category;
-              });
-            }
-            return; // Stop after first match
+
+      // Iterate through pre-compiled patterns (Extremely Fast)
+      for (final entry in _categoryPatterns.entries) {
+        if (entry.value.hasMatch(description)) {
+          if (_selectedCategory != entry.key) {
+            setState(() {
+              _selectedCategory = entry.key;
+            });
           }
+          return; // Stop after first match priority
         }
       }
     });
   }
+  // ---------------------------------------------------------------------------
 
   @override
   void initState() {
