@@ -72,51 +72,44 @@ final personalOverviewProvider = StreamProvider<PersonalOverview>((ref) {
         );
       }
 
-      // Current month's start and end dates
       final now = DateTime.now();
       final startOfMonth = DateTime(now.year, now.month, 1);
       final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
-      // Get personal expenses for spending total
-      final personalExpensesStream = repository.getFilteredExpenses(
+      // ✅ FIX: Fetch ALL expenses (Personal + Group) involved with user
+      final allExpensesStream = repository.getFilteredExpenses(
         startDate: startOfMonth,
         endDate: endOfMonth,
-        memberId: user.id,
-        type: 'personal',
+        memberId: user.id, // Uses the fixed repo logic to get everything
       );
 
-      // Get all group expenses for balance calculation
-      final groupExpensesStream = repository.getFilteredExpenses(
-        startDate: startOfMonth,
-        endDate: endOfMonth,
-        type: 'group',
-      );
-
-      // Combine both streams
-      return personalExpensesStream.asyncMap((personalExpenses) async {
-        final groupExpenses = await groupExpensesStream.first;
-        
-        // Total spent from personal expenses only
+      return allExpensesStream.map((expenses) {
         double totalSpent = 0;
-        for (final expense in personalExpenses) {
-          totalSpent += expense.amount;
-        }
+        double totalOwed = 0;
+        double totalOwing = 0;
 
-        // Calculate owed/owing from group expenses only
-        double totalOwed = 0; // Amount owed to user
-        double totalOwing = 0; // Amount user owes to others
+        for (final expense in expenses) {
+          // 1. Calculate Total Spent (My Consumption)
+          if (expense.type == 'personal') {
+            totalSpent += expense.amount;
+          } else {
+            // In a group, my "Expense" is strictly my share of the split
+            totalSpent += expense.split[user.id] ?? 0.0;
+          }
 
-        for (final expense in groupExpenses) {
-          // Only process if user is involved
-          if (expense.split.containsKey(user.id) || expense.paidBy == user.id) {
-            final userPaid = expense.paidBy == user.id ? expense.amount : 0.0;
-            final userOwes = expense.split[user.id] ?? 0.0;
-            final netForThisExpense = userPaid - userOwes;
+          // 2. Calculate Net Balance (What I Paid vs What I Consumed)
+          // Only applies to group/family expenses
+          if (expense.type != 'personal') {
+            final myPayment = expense.paidBy == user.id ? expense.amount : 0.0;
+            final myConsumption = expense.split[user.id] ?? 0.0;
             
-            if (netForThisExpense > 0) {
-              totalOwed += netForThisExpense;
-            } else if (netForThisExpense < 0) {
-              totalOwing += netForThisExpense.abs();
+            // Net = Paid - Consumed
+            final net = myPayment - myConsumption;
+
+            if (net > 0) {
+              totalOwed += net; // I paid extra -> Others owe me
+            } else {
+              totalOwing += net.abs(); // I paid less -> I owe others
             }
           }
         }

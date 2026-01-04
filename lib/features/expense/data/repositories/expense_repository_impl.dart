@@ -322,11 +322,15 @@ class ExpenseRepositoryImpl implements ExpenseRepository {
           .map((doc) => ExpenseModel.fromFirestore(doc).toEntity())
           .toList();
 
-      // Apply member filter (requires checking multiple fields)
+      // ✅ FIX: Include expenses where user is in the split (Participant)
       if (memberId != null && memberId.isNotEmpty) {
-        expenses = expenses
-            .where((e) => e.attributedMemberId == memberId || e.paidBy == memberId)
-            .toList();
+        expenses = expenses.where((e) {
+          final isPayer = e.paidBy == memberId;
+          final isAttributed = e.attributedMemberId == memberId;
+          final isParticipant = e.split.containsKey(memberId); // <--- Critical Fix
+          
+          return isPayer || isAttributed || isParticipant;
+        }).toList();
       }
 
       return expenses;

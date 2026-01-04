@@ -182,7 +182,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       endDate: endOfMonth,
       category: _selectedCategoryFilter,
       memberId: user.id,
-      type: 'personal',
+      type: null, // ✅ FIX: Pass null to fetch BOTH 'personal' and 'group' types
     );
     final expensesAsync = ref.watch(filteredExpensesProvider(filterParams));
 
