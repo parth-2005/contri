@@ -244,9 +244,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
           const SizedBox(height: 24),
 
-          // Donut Chart with Center Text
-          if (categoryData.isNotEmpty)
-            _buildDonutChart(categoryData, totalAmount),
+          // Donut Chart with Center Text (always show, even if ₹0)
+          _buildDonutChart(categoryData, totalAmount),
 
           const SizedBox(height: 24),
 
@@ -706,6 +705,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     onSelected: (selected) {
                       if (selected) {
                         if (period == 'Custom') {
+                          // Save current selection before showing picker
+                          _previousPeriodSelection = _selectedPeriod != 'Custom' 
+                              ? _selectedPeriod 
+                              : _previousPeriodSelection;
                           _showCustomDateRangePicker();
                         } else {
                           setState(() {
@@ -812,8 +815,21 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     if (picked != null) {
       setState(() {
-        _customStartDate = picked.start;
-        _customEndDate = picked.end;
+        // Make start date inclusive from 00:00:00
+        _customStartDate = DateTime(
+          picked.start.year,
+          picked.start.month,
+          picked.start.day,
+        );
+        // Make end date inclusive up to 23:59:59
+        _customEndDate = DateTime(
+          picked.end.year,
+          picked.end.month,
+          picked.end.day,
+          23,
+          59,
+          59,
+        );
         _selectedPeriod = 'Custom';
       });
     } else {
@@ -951,19 +967,42 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ),
               const SizedBox(height: 24),
               SizedBox(
-                height: 220,
+                height: 250,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    PieChart(
-                      PieChartData(
-                        sections: _buildDonutChartSections(
-                            categoryData, totalAmount),
-                        sectionsSpace: 2,
-                        centerSpaceRadius: 70,
-                        borderData: FlBorderData(show: false),
+                    if (categoryData.isNotEmpty)
+                      PieChart(
+                        PieChartData(
+                          sections: _buildDonutChartSections(
+                              categoryData, totalAmount),
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 70,
+                          borderData: FlBorderData(show: false),
+                        ),
+                      )
+                      else
+                      // Empty Pie Chart with zero data
+                      PieChart(
+                        PieChartData(
+                          sections: [
+                            PieChartSectionData(
+                              value: 1,
+                              color: Colors.grey.shade300,
+                              radius: 55,
+                              title: '0%',
+                              titleStyle: GoogleFonts.lato(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 70,
+                          borderData: FlBorderData(show: false),
+                        ),
                       ),
-                    ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1000,6 +1039,44 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       Map<String, double> categoryData, double totalAmount) {
     final entries = categoryData.entries.toList();
     final widgets = <Widget>[];
+
+    // Show empty state when no data
+    if (entries.isEmpty) {
+      widgets.add(
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.done_all,
+                  size: 56,
+                  color: Colors.green.shade300,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No expenses in this period! 🎉',
+                  style: GoogleFonts.lato(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your wallet is safe',
+                  style: GoogleFonts.lato(
+                    fontSize: 14,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return Column(children: widgets);
+    }
 
     for (int i = 0; i < entries.length; i++) {
       final entry = entries[i];
@@ -1169,12 +1246,24 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   }
 
   FilterParams buildPreviousMonthFilterParams(String userId) {
-    final now = DateTime.now();
-    final previousMonth = DateTime(now.year, now.month - 1, 1);
-    final startDate =
-        DateTime(previousMonth.year, previousMonth.month, 1);
-    final endDate =
-        DateTime(previousMonth.year, previousMonth.month + 1, 0, 23, 59, 59);
+    DateTime startDate;
+    DateTime endDate;
+    
+    // For custom date ranges, calculate previous period relative to custom dates
+    if (_selectedPeriod == 'Custom' && _customStartDate != null && _customEndDate != null) {
+      final daysDifference = _customEndDate!.difference(_customStartDate!).inDays;
+      final previousEnd = _customStartDate!.subtract(const Duration(days: 1));
+      final previousStart = previousEnd.subtract(Duration(days: daysDifference));
+      
+      startDate = DateTime(previousStart.year, previousStart.month, previousStart.day);
+      endDate = DateTime(previousEnd.year, previousEnd.month, previousEnd.day, 23, 59, 59);
+    } else {
+      // For non-custom periods, use previous month
+      final now = DateTime.now();
+      final previousMonth = DateTime(now.year, now.month - 1, 1);
+      startDate = DateTime(previousMonth.year, previousMonth.month, 1);
+      endDate = DateTime(previousMonth.year, previousMonth.month + 1, 0, 23, 59, 59);
+    }
 
     return FilterParams(
       startDate: startDate,
