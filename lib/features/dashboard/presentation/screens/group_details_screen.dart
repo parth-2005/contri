@@ -607,8 +607,11 @@ class GroupDetailsScreen extends ConsumerWidget {
     Map<String, AppUser> members,
     BuildContext context,
   ) {
+    // Filter out settlements before calculating analytics
+    final validExpenses = groupExpenses.where((e) => e.category != 'Settlement').toList();
+    
     final paidByStats = <String, double>{};
-    for (final expense in groupExpenses) {
+    for (final expense in validExpenses) {
       paidByStats[expense.paidBy] =
           (paidByStats[expense.paidBy] ?? 0) + expense.amount;
     }
@@ -622,7 +625,7 @@ class GroupDetailsScreen extends ConsumerWidget {
       }
     });
 
-    final categoryData = _calculateCategoryBreakdown(groupExpenses);
+    final categoryData = _calculateCategoryBreakdown(validExpenses);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -961,6 +964,9 @@ class GroupDetailsScreen extends ConsumerWidget {
     if (userId == null) return 0;
     double total = 0;
     for (final expense in expenses) {
+      // Ignore settlements for spending stats
+      if (expense.category == 'Settlement') continue;
+      
       if (expense.split.containsKey(userId)) {
         total += expense.split[userId] ?? 0;
       }

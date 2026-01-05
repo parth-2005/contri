@@ -23,9 +23,12 @@ class DailyTotal {
 /// Service to calculate group-wide analytics stats
 class GroupAnalyticsService {
   GroupStats calculateGroupStats(List<Expense> expenses) {
-    final totalSpent = _calculateTotalSpent(expenses);
-    final categoryBreakdown = _calculateCategoryBreakdown(expenses);
-    final spendingCurve = _calculateSpendingCurve(expenses);
+    // Filter out settlements
+    final validExpenses = expenses.where((e) => e.category != 'Settlement').toList();
+    
+    final totalSpent = _calculateTotalSpent(validExpenses);
+    final categoryBreakdown = _calculateCategoryBreakdown(validExpenses);
+    final spendingCurve = _calculateSpendingCurve(validExpenses);
 
     return GroupStats(
       totalSpent: totalSpent,

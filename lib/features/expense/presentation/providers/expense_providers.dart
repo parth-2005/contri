@@ -73,51 +73,55 @@ final personalOverviewProvider = StreamProvider<PersonalOverview>((ref) {
       }
 
       final now = DateTime.now();
+      // Define the current month window
       final startOfMonth = DateTime(now.year, now.month, 1);
       final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
 
-      // ✅ FIX: Fetch ALL expenses (Personal + Group) involved with user
+      // ✅ FIX 1: Fetch ALL expenses (Remove Date Filter)
+      // Debt calculations must include history (e.g., Expense in Dec, Settlement in Jan)
       final allExpensesStream = repository.getFilteredExpenses(
-        startDate: startOfMonth,
-        endDate: endOfMonth,
-        memberId: user.id, // Uses the fixed repo logic to get everything
+        memberId: user.id,
       );
 
       return allExpensesStream.map((expenses) {
-        double totalSpent = 0;
-        double totalOwed = 0;
-        double totalOwing = 0;
-
+        double totalSpentThisMonth = 0;
+        double globalNetBalance = 0;
+        print(user.id);
         for (final expense in expenses) {
-          // 1. Calculate Total Spent (My Consumption)
-          if (expense.type == 'personal') {
-            totalSpent += expense.amount;
-          } else {
-            // In a group, my "Expense" is strictly my share of the split
-            totalSpent += expense.split[user.id] ?? 0.0;
+          // print ('Expense: ${expense.id}, Type: ${expense.type}, Amount: ${expense.amount}, Date: ${expense.date}, PaidBy: ${expense.paidBy}, Split: ${expense.split}');
+          final isSettlement = expense.category == 'Settlement';
+          
+          // Check if this specific expense happened this month
+          final isThisMonth = expense.date.isAfter(startOfMonth.subtract(const Duration(seconds: 1))) && 
+                              expense.date.isBefore(endOfMonth.add(const Duration(seconds: 1)));
+
+          // 1. Calculate Total Spent (My Consumption) - THIS MONTH ONLY
+          if (!isSettlement && isThisMonth) {
+            if (expense.type == 'personal') {
+              totalSpentThisMonth += expense.amount;
+            }
+            else if (expense.type == 'group') {
+              totalSpentThisMonth += expense.split[user.id] ?? 0.0;
+            }
           }
 
-          // 2. Calculate Net Balance (What I Paid vs What I Consumed)
-          // Only applies to group/family expenses
+          // 2. Calculate Net Balance - LIFETIME (All History)
+          // We include ALL transactions to ensure debts cancel out correctly
           if (expense.type != 'personal') {
             final myPayment = expense.paidBy == user.id ? expense.amount : 0.0;
             final myConsumption = expense.split[user.id] ?? 0.0;
             
-            // Net = Paid - Consumed
-            final net = myPayment - myConsumption;
-
-            if (net > 0) {
-              totalOwed += net; // I paid extra -> Others owe me
-            } else {
-              totalOwing += net.abs(); // I paid less -> I owe others
-            }
+            // + Positive: I paid more than I consumed (I am owed)
+            // - Negative: I consumed more than I paid (I owe)
+            globalNetBalance += (myPayment - myConsumption);
           }
         }
 
+        // 3. Final Result
         return PersonalOverview(
-          totalSpentThisMonth: totalSpent,
-          totalOwed: totalOwed,
-          totalOwing: totalOwing,
+          totalSpentThisMonth: totalSpentThisMonth,
+          totalOwed: globalNetBalance > 0.01 ? globalNetBalance : 0,
+          totalOwing: globalNetBalance < -0.01 ? globalNetBalance.abs() : 0, // Threshold handles floating point errors
         );
       });
     },
