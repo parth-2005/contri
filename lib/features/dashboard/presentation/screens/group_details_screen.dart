@@ -405,7 +405,7 @@ class GroupDetailsScreen extends ConsumerWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-              error: (error, __) => Text(
+              error: (error, _) => Text(
                 'Error loading settlements',
                 style: GoogleFonts.lato(color: Colors.red),
               ),

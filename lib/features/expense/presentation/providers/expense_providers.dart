@@ -1,10 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/repositories/expense_repository_impl.dart';
 import '../../domain/entities/expense.dart';
+import '../../domain/repositories/expense_repository.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 
 /// Provider for ExpenseRepository
-final expenseRepositoryProvider = Provider((ref) {
+final expenseRepositoryProvider = Provider<ExpenseRepository>((ref) {
   return ExpenseRepositoryImpl();
 });
 
@@ -86,7 +87,6 @@ final personalOverviewProvider = StreamProvider<PersonalOverview>((ref) {
       return allExpensesStream.map((expenses) {
         double totalSpentThisMonth = 0;
         double globalNetBalance = 0;
-        print(user.id);
         for (final expense in expenses) {
           // print ('Expense: ${expense.id}, Type: ${expense.type}, Amount: ${expense.amount}, Date: ${expense.date}, PaidBy: ${expense.paidBy}, Split: ${expense.split}');
           final isSettlement = expense.category == 'Settlement';

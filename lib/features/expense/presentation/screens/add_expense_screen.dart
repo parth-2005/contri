@@ -627,8 +627,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       // Audit 5: Async safety - check mounted before setState
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
